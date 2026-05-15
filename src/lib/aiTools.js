@@ -639,6 +639,93 @@ export async function executeTool(name, args) {
   }
 }
 
+/* ─── لقطة بيانات للنماذج التي لا تدعم Tool Calling ─── */
+export async function buildSnapshot() {
+  const [products, customers, todaySales, monthSales, activity] = await Promise.all([
+    getAllDocs("products", 500),
+    getAllDocs("customers", 500),
+    loadSales("today"),
+    loadSales("month"),
+    getDocs(query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), fbLimit(10)))
+      .then((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  ]);
+
+  const lowStock = products
+    .filter((p) => Number(p.quantity || 0) <= Number(p.minimumStock || 0))
+    .sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+
+  const debtors = customers
+    .filter((c) => Number(c.totalDebt || 0) > 0)
+    .sort((a, b) => Number(b.totalDebt || 0) - Number(a.totalDebt || 0));
+
+  let invValueCost = 0, invValueRetail = 0;
+  for (const p of products) {
+    invValueCost += Number(p.quantity || 0) * Number(p.purchasePrice || 0);
+    invValueRetail += Number(p.quantity || 0) * Number(p.salePrice || 0);
+  }
+
+  function summarizeSales(sales) {
+    let revenue = 0, cost = 0, cash = 0, credit = 0, items = 0;
+    for (const s of sales) {
+      revenue += Number(s.total || 0);
+      if (s.paymentMethod === "cash") cash += Number(s.total || 0);
+      else credit += Number(s.total || 0);
+      for (const it of s.items || []) {
+        cost += Number(it.purchasePrice || 0) * Number(it.quantity || 0);
+        items += Number(it.quantity || 0);
+      }
+    }
+    return {
+      invoices: sales.length,
+      items_sold: items,
+      revenue: Math.round(revenue * 100) / 100,
+      profit: Math.round((revenue - cost) * 100) / 100,
+      cash: Math.round(cash * 100) / 100,
+      credit: Math.round(credit * 100) / 100,
+    };
+  }
+
+  /* الأكثر مبيعاً هذا الشهر */
+  const sellerMap = new Map();
+  for (const s of monthSales) {
+    for (const it of s.items || []) {
+      const key = it.productId || it.name;
+      const prev = sellerMap.get(key) || { name: it.name, quantity: 0, revenue: 0 };
+      prev.quantity += Number(it.quantity || 0);
+      prev.revenue += Number(it.total || 0);
+      sellerMap.set(key, prev);
+    }
+  }
+  const topSellers = [...sellerMap.values()]
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 10);
+
+  return {
+    counts: {
+      products: products.length,
+      customers: customers.length,
+      customers_with_debt: debtors.length,
+      low_stock: lowStock.length,
+    },
+    inventory_value: {
+      cost: Math.round(invValueCost * 100) / 100,
+      retail: Math.round(invValueRetail * 100) / 100,
+      potential_profit: Math.round((invValueRetail - invValueCost) * 100) / 100,
+      currency: "دج",
+    },
+    sales_today: summarizeSales(todaySales),
+    sales_last_30_days: summarizeSales(monthSales),
+    low_stock_items: lowStock.slice(0, 20).map(summarizeProduct),
+    top_debtors: debtors.slice(0, 10).map(summarizeCustomer),
+    top_selling_30d: topSellers,
+    recent_activity: activity.slice(0, 10).map((a) => ({
+      type: a.type, title: a.title, description: a.description,
+    })),
+    products_sample: products.slice(0, 25).map(summarizeProduct),
+    customers_sample: customers.slice(0, 20).map(summarizeCustomer),
+  };
+}
+
 /* ─── معلومات وصفية للأدوات (لعرض رسائل ودية في الواجهة) ─── */
 export const TOOL_LABELS = {
   list_products: "قائمة المنتجات",

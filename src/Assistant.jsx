@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   Cog,
   Eye,
-  EyeOff,
+  Info,
   Loader2,
   Send,
   Sparkles,
@@ -27,6 +27,7 @@ import {
   TOOL_DEFINITIONS,
   TOOL_LABELS,
   WRITE_TOOLS,
+  buildSnapshot,
   describeWrite,
   executeTool,
 } from "./lib/aiTools";
@@ -62,10 +63,9 @@ export default function Assistant() {
   const [error, setError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState(null);
+  const [readOnly, setReadOnly] = useState(false);
   const abortRef = useRef(null);
   const listRef = useRef(null);
-
-  const hasKey = !!config.apiKey?.trim();
 
   useEffect(() => saveHistory(messages), [messages]);
   useEffect(() => {
@@ -87,7 +87,6 @@ export default function Assistant() {
   async function send(text) {
     const userText = (text ?? input).trim();
     if (!userText || status !== "idle") return;
-    if (!hasKey) { setShowSettings(true); return; }
 
     setError("");
     setInput("");
@@ -106,14 +105,22 @@ export default function Assistant() {
 
     try {
       const finalConvo = await runAgent({
-        apiKey: config.apiKey,
+        apiBase: config.apiBase || "",
         model: config.model || DEFAULT_MODEL,
         messages: apiMessages,
         tools: TOOL_DEFINITIONS,
         executeTool: wrappedExecute,
+        buildSnapshot,
         signal: controller.signal,
         onEvent: (ev) => {
           if (ev.type === "thinking") setStatus("thinking");
+          if (ev.type === "fallback_no_tools") {
+            setReadOnly(true);
+            setMessages((prev) => [...prev, {
+              role: "system_notice",
+              content: "هذا النموذج لا يدعم استدعاء الأدوات. تم التحويل تلقائياً إلى وضع القراءة فقط مع لقطة من بيانات المتجر.",
+            }]);
+          }
           if (ev.type === "tool_start") {
             setStatus("tool");
             setMessages((prev) => [...prev, {
@@ -140,7 +147,7 @@ export default function Assistant() {
       setStatus("idle");
     } catch (err) {
       setStatus("idle");
-      setError(err?.message || "حدث خطأ غير متوقع");
+      if (err?.name !== "AbortError") setError(err?.message || "حدث خطأ غير متوقع");
     } finally {
       abortRef.current = null;
     }
@@ -202,32 +209,43 @@ export default function Assistant() {
       </header>
 
       <main className="mx-auto flex h-[calc(100vh-180px)] max-w-4xl flex-col p-4 md:p-6 lg:h-[calc(100vh-130px)]">
-        {!hasKey ? (
-          <SetupPanel onOpen={() => setShowSettings(true)} />
-        ) : (
-          <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto pb-4">
-            {messages.length === 0 && <Empty onPick={send} />}
-            {messages.map((m, i) => <MessageBubble key={i} message={m} />)}
-            {status === "thinking" && <ThinkingIndicator />}
-            {error && (
-              <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700">
-                <AlertTriangle size={20} className="mt-1 shrink-0" />
-                <div>
-                  <b>خطأ:</b> {error}
-                  {error.toLowerCase().includes("401") && (
-                    <p className="mt-1 text-sm">المفتاح غير صالح. حدّثه من زر الإعدادات أعلى الصفحة.</p>
-                  )}
-                  {error.toLowerCase().includes("404") && (
-                    <p className="mt-1 text-sm">اسم النموذج غير صحيح. تأكد من معرّفه الدقيق على OpenRouter.</p>
-                  )}
-                </div>
+        <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto pb-4">
+          {readOnly && (
+            <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              <Info size={18} className="mt-0.5 shrink-0" />
+              <div className="text-sm">
+                النموذج الحالي لا يدعم الأدوات. تعمل الآن في <b>وضع القراءة فقط</b> مع لقطة بيانات.
+                للحصول على صلاحيات كاملة، غيّر النموذج من ⚙️ إلى مثل
+                <code className="ltr mx-1 rounded bg-amber-100 px-1">meta-llama/llama-3.3-70b-instruct:free</code>.
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          {messages.length === 0 && <Empty onPick={send} />}
+          {messages.map((m, i) => <MessageBubble key={i} message={m} />)}
+          {status === "thinking" && <ThinkingIndicator />}
+          {error && (
+            <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700">
+              <AlertTriangle size={20} className="mt-1 shrink-0" />
+              <div>
+                <b>خطأ:</b> {error}
+                {error.includes("OPENROUTER_API_KEY") && (
+                  <p className="mt-1 text-sm">المفتاح غير مضبوط في Vercel. افتح Vercel → Settings → Environment Variables وأضف OPENROUTER_API_KEY.</p>
+                )}
+                {error.includes("تعذر الاتصال") && (
+                  <p className="mt-1 text-sm">إذا كنت تعمل محلياً، استخدم <code className="ltr">vercel dev</code> أو حدّد عنوان الـ API من الإعدادات.</p>
+                )}
+                {error.toLowerCase().includes("401") && (
+                  <p className="mt-1 text-sm">المفتاح المضبوط على Vercel غير صالح. أنشئ مفتاحاً جديداً وحدّث متغير البيئة.</p>
+                )}
+                {error.toLowerCase().includes("404") && !error.includes("تعذر") && (
+                  <p className="mt-1 text-sm">اسم النموذج غير صحيح. تأكد من معرّفه الدقيق على OpenRouter.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
-        {hasKey && (
-          <form onSubmit={onSubmit} className="mt-auto pt-3">
+        <form onSubmit={onSubmit} className="mt-auto pt-3">
             <div className="card flex items-end gap-2 p-3">
               <textarea
                 value={input}
@@ -262,7 +280,6 @@ export default function Assistant() {
               Enter للإرسال • Shift+Enter لسطر جديد • قد يُخطئ الذكاء الاصطناعي، راجع العمليات الحساسة.
             </p>
           </form>
-        )}
       </main>
 
       {showSettings && (
@@ -384,46 +401,14 @@ function Dot({ delay }) {
   );
 }
 
-function SetupPanel({ onOpen }) {
-  return (
-    <div className="grid flex-1 place-items-center">
-      <div className="card max-w-lg p-8 text-center">
-        <div className="mx-auto mb-4 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-[#0d6a42] to-[#063f2b] text-white">
-          <Sparkles size={40} />
-        </div>
-        <h2 className="text-2xl font-black text-[#063f2b]">إعداد المساعد الذكي</h2>
-        <p className="mt-3 text-gray-600">
-          يحتاج المساعد إلى مفتاح OpenRouter API ليعمل. احصل على مفتاح مجاني من
-          <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="mx-1 font-bold text-[#0d6a42] underline">
-            openrouter.ai/keys
-          </a>
-          ثم أدخله هنا.
-        </p>
-        <ol className="mt-4 space-y-1 text-right text-sm text-gray-600">
-          <li>1. أنشئ حساباً مجانياً على OpenRouter.</li>
-          <li>2. من قسم Keys أنشئ مفتاحاً جديداً.</li>
-          <li>3. الصق المفتاح في الإعدادات أدناه.</li>
-        </ol>
-        <button onClick={onOpen} className="btn-primary mt-6 h-13 w-full px-6 py-3 font-black">
-          فتح الإعدادات
-        </button>
-        <p className="mt-3 text-xs text-gray-500">
-          المفتاح يُحفظ في متصفحك فقط (localStorage) ولا يُرسل لأي خادم آخر.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 function SettingsModal({ config, close, save }) {
-  const [apiKey, setApiKey] = useState(config.apiKey || "");
   const [model, setModel] = useState(config.model || DEFAULT_MODEL);
+  const [apiBase, setApiBase] = useState(config.apiBase || "");
   const [requireConfirm, setRequireConfirm] = useState(config.requireConfirm !== false);
-  const [showKey, setShowKey] = useState(false);
 
   function submit(e) {
     e.preventDefault();
-    save({ apiKey: apiKey.trim(), model: model.trim() || DEFAULT_MODEL, requireConfirm });
+    save({ model: model.trim() || DEFAULT_MODEL, apiBase: apiBase.trim(), requireConfirm });
   }
 
   return (
