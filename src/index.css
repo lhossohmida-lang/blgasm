@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  font-family: "Tajawal", "Cairo", "Segoe UI", Arial, sans-serif;
+  --green: #063f2b;
+  --green-2: #0d6a42;
+  --cream: #faf8f2;
+  --orange: #f59e0b;
+}
+
+* { box-sizing: border-box; }
+html { direction: rtl; background: #f8faf7; }
+body { margin: 0; min-width: 320px; color: #111827; background: radial-gradient(circle at 15% 5%, #eef7ed 0, transparent 28%), #fbfaf6; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+
+.app-shell { min-height: 100vh; padding-bottom: 92px; }
+.hero-header { background: radial-gradient(circle at 35% 0, rgba(55, 122, 86, .45), transparent 38%), linear-gradient(135deg, #052d22, #063f2b 58%, #052419); color: white; }
+.glass-icon { background: rgba(255,255,255,.11); border: 1px solid rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.card { background: rgba(255,255,255,.92); border: 1px solid #e6e9e3; border-radius: 24px; box-shadow: 0 14px 40px rgba(15, 23, 42, .05); }
+.soft-card { background: linear-gradient(135deg, #fff, #f9fbf6); border: 1px solid #e4e9e0; border-radius: 18px; }
+.btn-primary { color: white; background: linear-gradient(135deg, #0d6a42, #043c2c); border-radius: 14px; box-shadow: 0 10px 24px rgba(4, 63, 43, .18); }
+.btn-ghost { background: #fff; border: 1px solid #dfe5de; border-radius: 14px; }
+.input { width: 100%; border: 1px solid #dfe5de; background: #fff; border-radius: 14px; min-height: 48px; padding: 0 14px; outline: none; }
+.input:focus { border-color: #0d6a42; box-shadow: 0 0 0 4px rgba(13, 106, 66, .08); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.badge-green { color: #08623e; background: #eaf5ec; }
+.badge-orange { color: #d97706; background: #fff4e2; }
+.badge-red { color: #dc2626; background: #feecec; }
+.bottom-nav { background: linear-gradient(135deg, #052d22, #073f2d); box-shadow: 0 -14px 40px rgba(4, 63, 43, .2); }
+.table-row { border-bottom: 1px solid #edf0eb; }
+.ltr { direction: ltr; unicode-bidi: embed; }
+
+@media (min-width: 1024px) {
+  .app-shell { padding-bottom: 0; padding-right: 280px; }
+}
+
+@media print {
+  .no-print, .bottom-nav, .desktop-sidebar, .hero-header { display: none !important; }
+  .app-shell { padding: 0 !important; background: white; }
+  .card { box-shadow: none; border: none; }
+
+  /* ─── إيصال حراري ─── */
+  body.receipt-58 { width: 58mm !important; }
+  body.receipt-80 { width: 80mm !important; }
+
+  body.receipt-58 .receipt-page,
+  body.receipt-80 .receipt-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+  }
+
+  .receipt-page * { color: #000 !important; background: transparent !important; }
+  .receipt-page .receipt-logo { display: none; }
+  .receipt-page .receipt-divider { border-top: 1px dashed #000; margin: 4px 0; }
+  .receipt-page table { width: 100%; font-size: 10px; }
+  .receipt-page th, .receipt-page td { padding: 2px 3px !important; }
+  .receipt-page .receipt-total { font-size: 13px; font-weight: 900; }
+  .receipt-page .receipt-footer { text-align: center; font-size: 9px; margin-top: 6px; }
+
+  /* إخفاء كل شيء ما عدا الإيصال عند الطباعة الحرارية */
+  body.receipt-58 *:not(.receipt-page):not(.receipt-page *),
+  body.receipt-80 *:not(.receipt-page):not(.receipt-page *) {
+    display: none !important;
+  }
+  body.receipt-58 .receipt-page,
+  body.receipt-80 .receipt-page {
+    display: block !important;
+  }
+}
