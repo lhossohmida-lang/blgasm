@@ -352,6 +352,14 @@ function MessageBubble({ message }) {
     );
   }
   if (message.role === "tool_event") return <ToolEvent message={message} />;
+  if (message.role === "system_notice") {
+    return (
+      <div className="mx-auto flex max-w-[92%] items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <Info size={14} />
+        <span>{message.content}</span>
+      </div>
+    );
+  }
   return null;
 }
 
@@ -419,30 +427,9 @@ function SettingsModal({ config, close, save }) {
           <button onClick={close} className="grid h-10 w-10 place-items-center rounded-full bg-gray-100"><X /></button>
         </div>
         <form onSubmit={submit} className="space-y-4">
-          <label className="block">
-            <span className="mb-2 block font-bold">مفتاح OpenRouter API</span>
-            <div className="relative">
-              <input
-                className="input ltr pl-12 text-left"
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-or-v1-..."
-                dir="ltr"
-                autoFocus
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute inset-y-0 left-2 grid w-9 place-items-center rounded-full text-gray-500"
-                tabIndex={-1}
-              >
-                {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-gray-500">يُحفظ في متصفحك فقط.</p>
-          </label>
+          <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+            <b>🔒 المفتاح آمن على الخادم.</b> مفتاح OpenRouter محفوظ كمتغير بيئة (<code className="ltr">OPENROUTER_API_KEY</code>) في Vercel، ولا يظهر في المتصفح.
+          </div>
 
           <label className="block">
             <span className="mb-2 block font-bold">اسم النموذج</span>
@@ -452,9 +439,34 @@ function SettingsModal({ config, close, save }) {
               onChange={(e) => setModel(e.target.value)}
               placeholder={DEFAULT_MODEL}
               dir="ltr"
+              autoFocus
             />
             <p className="mt-1 text-xs text-gray-500">
-              معرّف النموذج كما يظهر على OpenRouter. إذا فشل الطلب، انسخ المعرّف الدقيق من صفحة النموذج.
+              معرّف النموذج كما يظهر على OpenRouter.
+            </p>
+            <details className="mt-2 text-xs text-gray-500">
+              <summary className="cursor-pointer font-bold">نماذج مجانية مقترحة</summary>
+              <ul className="ltr mt-2 space-y-1 text-left">
+                <li><code>nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free</code> — قراءة فقط</li>
+                <li><code>nvidia/nemotron-3-super-120b-a12b:free</code> — قراءة فقط (أقوى)</li>
+                <li><code>meta-llama/llama-3.3-70b-instruct:free</code> — يدعم الأدوات ✅</li>
+                <li><code>qwen/qwen-2.5-72b-instruct:free</code> — يدعم الأدوات ✅</li>
+                <li><code>google/gemini-2.0-flash-exp:free</code> — يدعم الأدوات ✅</li>
+              </ul>
+            </details>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block font-bold">عنوان الـ API (اختياري)</span>
+            <input
+              className="input ltr text-left"
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              placeholder="https://your-app.vercel.app"
+              dir="ltr"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              اتركه فارغاً لاستخدام نفس النطاق. مفيد عند تشغيل <code className="ltr">npm run dev</code> محلياً والإشارة إلى نشر Vercel.
             </p>
           </label>
 

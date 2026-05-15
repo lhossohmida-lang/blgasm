@@ -16,6 +16,7 @@
 - تقارير: المبيعات، الأرباح، الديون، أكثر المنتجات مبيعًا، وتوزيع الفئات.
 - بيانات تجريبية أولية تضاف تلقائيًا عند أول تسجيل دخول إذا كانت قاعدة البيانات فارغة.
 - الأرقام بصيغة لاتينية والعملة الافتراضية هي الدينار الجزائري `دج`.
+- مساعد ذكي (`/assistant`) عبر OpenRouter يقرأ ويعدّل بيانات المتجر، مع تأكيد لكل عملية كتابة. المفتاح السرّي محفوظ على Vercel، لا في المتصفح.
 
 ## التشغيل المحلي
 
@@ -81,3 +82,62 @@ npm run preview
 - `activityLogs`
 
 كل عمليات البيع والدفعات تستخدم معاملات Firestore للحفاظ على اتساق الكميات والديون.
+
+## النشر على Vercel + المساعد الذكي
+
+التطبيق يستخدم Vercel Serverless Function (`api/chat.js`) كوسيط بين الواجهة وOpenRouter. هذا يبقي مفتاح API السرّي على الخادم بدلاً من إظهاره في حزمة الـ JavaScript.
+
+### 1. النشر الأول
+
+```bash
+npm install -g vercel
+vercel login
+vercel        # نشر تجريبي (preview)
+vercel --prod # نشر إنتاجي
+```
+
+أو من خلال GitHub: ارفع المشروع إلى GitHub ثم اربطه من [vercel.com/new](https://vercel.com/new).
+
+### 2. ضبط متغير البيئة
+
+أنشئ مفتاحاً على [openrouter.ai/keys](https://openrouter.ai/keys)، ثم على Vercel:
+
+**Dashboard → Project → Settings → Environment Variables → Add**
+
+| Name | Value |
+|---|---|
+| `OPENROUTER_API_KEY` | `sk-or-v1-...` |
+| `ALLOWED_ORIGINS` *(اختياري)* | `https://your-app.vercel.app` |
+
+بعد إضافة المتغير، أعد النشر (`vercel --prod`) ليلتقطها.
+
+### 3. التطوير المحلي
+
+طريقتان للعمل محلياً مع الـ API:
+
+**أ) `vercel dev`** — يشغّل Vite + serverless functions معاً على المنفذ نفسه:
+
+```bash
+vercel dev
+```
+
+**ب) `npm run dev` + Vercel البعيد** — استخدم نشر Vercel كباك-إند:
+
+في صفحة المساعد → ⚙️ → "عنوان الـ API"، الصق:
+```
+https://your-app.vercel.app
+```
+
+### 4. تغيير النموذج
+
+من صفحة المساعد اضغط ⚙️ وغيّر "اسم النموذج". معرّفات النماذج المتاحة:
+
+| النموذج | يدعم الأدوات؟ | الحجم |
+|---|---|---|
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | ❌ قراءة فقط | 30B |
+| `nvidia/nemotron-3-super-120b-a12b:free` | ❌ قراءة فقط | 120B |
+| `meta-llama/llama-3.3-70b-instruct:free` | ✅ كامل | 70B |
+| `qwen/qwen-2.5-72b-instruct:free` | ✅ كامل | 72B |
+| `google/gemini-2.0-flash-exp:free` | ✅ كامل | — |
+
+النماذج التي لا تدعم استدعاء الأدوات تعمل تلقائياً في وضع القراءة فقط مع لقطة من بيانات المتجر.
