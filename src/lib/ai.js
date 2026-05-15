@@ -5,7 +5,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const AI_CONFIG_KEY = "ai.config.v1";
 export const AI_HISTORY_KEY = "ai.history.v1";
 
-export const DEFAULT_MODEL = "nvidia/nemotron-nano-3-omni-30b-a3b:free";
+export const DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
 
 export function loadAIConfig() {
   try {
