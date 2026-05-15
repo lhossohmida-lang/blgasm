@@ -100,7 +100,7 @@ async function callBackend({ apiBase, model, messages, tools, signal }) {
     });
   } catch (err) {
     if (err?.name === "AbortError") throw err;
-    throw new Error(`تعذر الاتصال بالخادم (${endpoint}). تأكد من نشر التطبيق على Vercel أو ضبط VITE_AI_API_BASE.`);
+    throw new Error(`تعذر الاتصال بالخادم (${endpoint}). تأكد من نشر التطبيق على Vercel أو ضبط VITE_AI_API_BASE.`, { cause: err });
   }
 
   let data;
@@ -144,7 +144,7 @@ export async function runAgent({
     if (data?._fallback === "no_tools" && toolsEnabled) {
       toolsEnabled = false;
       onEvent?.({ type: "fallback_no_tools" });
-      let snapshot = null;
+      let snapshot;
       try { snapshot = await buildSnapshot?.(); } catch { snapshot = { error: "تعذّر تحميل لقطة البيانات" }; }
       const userTurns = convo.filter((m) => m.role !== "system" && m.role !== "tool");
       convo = [{ role: "system", content: buildSystemPrompt({ snapshot }) }, ...userTurns];
