@@ -5,7 +5,6 @@ import {
   doc,
   getDocs,
   increment,
-  limit,
   orderBy,
   query,
   runTransaction,
@@ -19,24 +18,6 @@ import { db, storage } from "./firebase";
 
 export const categories = ["مواد أساسية", "مشروبات", "حلويات", "منظفات", "ألبان", "أخرى"];
 export const units = ["قطعة", "كغ", "غرام", "لتر", "علبة", "كرتونة", "كيس"];
-
-export const demoProducts = [
-  { name: "أرز بسمتي 5 كغ", barcode: "6281001234567", category: "مواد أساسية", purchasePrice: 42, salePrice: 55, quantity: 45, unit: "كغ", minimumStock: 20, supplier: "مؤسسة الخير للتجارة", imageUrl: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=500&q=80" },
-  { name: "سكر أبيض 1 كغ", barcode: "6281002345678", category: "مواد أساسية", purchasePrice: 2.4, salePrice: 3.2, quantity: 18, unit: "كغ", minimumStock: 20, imageUrl: "https://images.unsplash.com/photo-1610725664285-7c57e6eeac3f?auto=format&fit=crop&w=500&q=80" },
-  { name: "حليب كامل الدسم 1 لتر", barcode: "6281003456789", category: "ألبان", purchasePrice: 4.8, salePrice: 6.5, quantity: 30, unit: "لتر", minimumStock: 15, imageUrl: "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=500&q=80" },
-  { name: "زيت دوار الشمس 1.5 لتر", barcode: "6281004567890", category: "مواد أساسية", purchasePrice: 13.5, salePrice: 18, quantity: 12, unit: "لتر", minimumStock: 15, imageUrl: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=500&q=80" },
-  { name: "شاي ربيع 100 كيس", barcode: "6281005678901", category: "مشروبات", purchasePrice: 11, salePrice: 15.75, quantity: 22, unit: "علبة", minimumStock: 8, imageUrl: "https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?auto=format&fit=crop&w=500&q=80" },
-  { name: "بسكويت شاي 12×90 غ", barcode: "6281006789012", category: "حلويات", purchasePrice: 4.2, salePrice: 6.25, quantity: 8, unit: "علبة", minimumStock: 10, imageUrl: "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?auto=format&fit=crop&w=500&q=80" },
-  { name: "معجون طماطم 135 غ", barcode: "6281007890123", category: "مواد أساسية", purchasePrice: 2, salePrice: 2.95, quantity: 28, unit: "علبة", minimumStock: 12, imageUrl: "https://images.unsplash.com/photo-1588165171080-c89acfa5ee83?auto=format&fit=crop&w=500&q=80" },
-  { name: "مكرونة إسباجيتي 400 غ", barcode: "6281008901234", category: "مواد أساسية", purchasePrice: 2.7, salePrice: 3.5, quantity: 34, unit: "غرام", minimumStock: 12, imageUrl: "https://images.unsplash.com/photo-1551462147-ff29053bfc14?auto=format&fit=crop&w=500&q=80" },
-];
-
-const demoCustomers = [
-  { name: "أحمد محمد", phone: "050 123 4567", address: "الرياض، حي النرجس", notes: "زبون نشط", totalDebt: 1850 },
-  { name: "سالم الدوسري", phone: "055 987 6543", address: "الرياض", notes: "مدفوع جزئياً", totalDebt: 1250 },
-  { name: "فاطمة الزهراني", phone: "053 456 7890", address: "جدة", notes: "مستحق", totalDebt: 950 },
-  { name: "عبدالله الشهري", phone: "050 555 1122", address: "الدمام", notes: "متأخر", totalDebt: 750 },
-];
 
 export function collectionRef(name) {
   return collection(db, name);
@@ -220,14 +201,7 @@ export async function fetchCustomerTransactions(customerId) {
 }
 
 export async function ensureDemoData() {
-  const productSnap = await getDocs(query(collectionRef("products"), limit(1)));
-  if (productSnap.empty) {
-    await Promise.all(demoProducts.map((item) => addDoc(collectionRef("products"), { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));
-  }
-  const customerSnap = await getDocs(query(collectionRef("customers"), limit(1)));
-  if (customerSnap.empty) {
-    await Promise.all(demoCustomers.map((item) => addDoc(collectionRef("customers"), { ...item, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));
-  }
+  /* تم حذف البيانات التجريبية — يبدأ التطبيق فارغاً */
 }
 
 export async function salesForPeriod(start) {

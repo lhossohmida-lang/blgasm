@@ -239,7 +239,6 @@ function TopHeader({ title, back = false }) {
           <button className="glass-icon grid h-14 w-14 place-items-center rounded-full"><Search /></button>
           <button className="glass-icon relative grid h-14 w-14 place-items-center rounded-full">
             <Bell />
-            <span className="absolute -top-1 -right-1 grid h-7 w-7 place-items-center rounded-full bg-orange-500 text-sm font-black">3</span>
           </button>
         </div>
       </div>
@@ -547,7 +546,7 @@ function Dashboard() {
 
   const debt = customers.reduce((s, c) => s + Number(c.totalDebt || 0), 0);
 
-  const chart = ["6 ص", "9 ص", "12 م", "3 م", "6 م", "9 م"].map((time, i) => ({ time, value: [0, 450, 920, 1580, 1200, todaySales][i] }));
+  const chart = ["6 ص", "9 ص", "12 م", "3 م", "6 م", "9 م"].map((time, i) => ({ time, value: i === 5 ? todaySales : 0 }));
 
   return (
     <Page title="متجر المواد الغذائية">
@@ -557,7 +556,7 @@ function Dashboard() {
       </div>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Stat icon={Package} title="المخزون" value={number(products.length)} unit="منتج" hint="محدث اليوم" />
-        <Stat icon={BarChart3} title="مبيعات اليوم" value={number(todaySales)} unit="دج" hint="+12% عن أمس" />
+        <Stat icon={BarChart3} title="مبيعات اليوم" value={number(todaySales)} unit="دج" hint="" />
         <Stat icon={User} title="الكريديت" value={number(debt)} unit="دج" hint={`${customers.filter((c) => c.totalDebt > 0).length} زبائن لديهم مستحقات`} tone="orange" />
         <Stat icon={AlertTriangle} title="منتجات قليلة المخزون" value={number(low.length)} unit="منتج" hint="تحتاج إعادة طلب" tone="red" />
       </section>
@@ -758,15 +757,12 @@ function Quick({ to, icon: Icon, label, accent, warm }) {
 }
 
 function ActivityList({ items, low }) {
-  const fallback = [
-    { id: "a", title: "تمت عملية بيع", description: "فاتورة جديدة", type: "sale" },
-    { id: "b", title: "إضافة منتج جديد", description: "SKU: 100245", type: "product" },
-    { id: "c", title: "تم سداد دفعة", description: "رصيد كريديت محدث", type: "payment" },
-  ];
+  const list = [...items.slice(0, 5), ...low.slice(0, 2).map((p) => ({ id: p.id, type: "stock", title: "تنبيه نقص المخزون", description: `${p.name}: الكمية المتبقية ${p.quantity}` }))].slice(0, 6);
   return (
     <section className="card p-5">
       <h2 className="mb-4 text-2xl font-black">النشاط الأخير</h2>
-      {[...items.slice(0, 5), ...low.slice(0, 2).map((p) => ({ id: p.id, type: "stock", title: "تنبيه نقص المخزون", description: `${p.name}: الكمية المتبقية ${p.quantity}` }))].concat(items.length ? [] : fallback).slice(0, 6).map((item) => (
+      {list.length === 0 && <p className="py-6 text-center text-gray-500">لا يوجد نشاط بعد.</p>}
+      {list.map((item) => (
         <div key={item.id} className="table-row flex items-center gap-4 py-4">
           <div className={`grid h-12 w-12 place-items-center rounded-full ${item.type === "stock" ? "bg-red-50 text-red-600" : item.type === "payment" ? "bg-orange-50 text-orange-600" : "bg-green-50 text-[#0d6a42]"}`}>
             {item.type === "stock" ? <AlertTriangle /> : item.type === "payment" ? <WalletCards /> : <ShoppingCart />}
@@ -923,7 +919,7 @@ function ProductForm() {
         </form>
         <aside className="card p-6">
           <h2 className="mb-5 text-center text-2xl font-black">معاينة المنتج</h2>
-          <div className="soft-card p-6 text-center">{preview ? <img src={preview} alt="" className="mx-auto mb-4 h-52 rounded-3xl object-cover" /> : <ProductImage p={form} className="mx-auto mb-4 h-52 w-52" />}<h3 className="text-2xl font-black">{form.name || "أرز بسمتي 5 كيلو"}</h3><span className="badge badge-green mt-3">{form.category}</span></div>
+          <div className="soft-card p-6 text-center">{preview ? <img src={preview} alt="" className="mx-auto mb-4 h-52 rounded-3xl object-cover" /> : <ProductImage p={form} className="mx-auto mb-4 h-52 w-52" />}<h3 className="text-2xl font-black">{form.name || "—"}</h3><span className="badge badge-green mt-3">{form.category}</span></div>
           <div className="mt-5"><ProductQrPreview code={form.qrCode || form.barcode} name={form.name} /></div>
           <dl className="mt-5 divide-y">{[["الباركود", form.barcode], ["سعر الشراء", money(form.purchasePrice)], ["سعر البيع", money(form.salePrice)], ["الكمية", form.quantity], ["الوحدة", form.unit], ["تاريخ الانتهاء", form.expiryDate], ["المورد", form.supplier]].map(([k, v]) => <div key={k} className="flex justify-between py-3"><dt className="text-[#0d6a42]">{k}</dt><dd>{v || "-"}</dd></div>)}</dl>
         </aside>
@@ -1283,9 +1279,9 @@ function Reports() {
   return (
     <Page title="التقارير">
       <div className="mb-6 flex flex-wrap gap-3">{["اليوم", "الأسبوع", "الشهر", "نطاق مخصص"].map((p) => <button key={p} onClick={() => setPeriod(p)} className={`rounded-2xl border px-6 py-3 font-bold ${period === p ? "btn-primary" : "bg-white"}`}>{p}</button>)}</div>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat icon={BarChart3} title="المبيعات" value={number(totalSales)} unit="دج" hint={`فلتر: ${period}`} /><Stat icon={WalletCards} title="الأرباح" value={number(profit)} unit="دج" hint="+8% عن السابق" /><Stat icon={FileText} title="إجمالي الديون" value={number(debt)} unit="دج" hint="قابل للتحصيل" tone="red" /><Stat icon={Package} title="أكثر المنتجات مبيعًا" value={products[0]?.name || "-"} unit="" hint="عرض التفاصيل" /></section>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat icon={BarChart3} title="المبيعات" value={number(totalSales)} unit="دج" hint={`فلتر: ${period}`} /><Stat icon={WalletCards} title="الأرباح" value={number(profit)} unit="دج" hint="" /><Stat icon={FileText} title="إجمالي الديون" value={number(debt)} unit="دج" hint="قابل للتحصيل" tone="red" /><Stat icon={Package} title="أكثر المنتجات مبيعًا" value={products[0]?.name || "—"} unit="" hint="" /></section>
       <div className="mt-6 grid gap-6 xl:grid-cols-2"><section className="card p-5"><h2 className="mb-4 text-2xl font-black">المبيعات خلال الأسبوع</h2><div className="h-80"><ResponsiveContainer><AreaChart data={week}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" /><YAxis /><Tooltip formatter={(v) => money(v)} /><Area dataKey="sales" stroke="#0d6a42" fill="#e6f2e9" strokeWidth={3} /></AreaChart></ResponsiveContainer></div></section><section className="card p-5"><h2 className="mb-4 text-2xl font-black">توزيع المبيعات حسب الفئات</h2><div className="h-80"><ResponsiveContainer><PieChart><Pie data={byCat} dataKey="value" nameKey="name" innerRadius={70} outerRadius={120}>{byCat.map((_, i) => <Cell key={i} fill={["#0d6a42", "#4c78a8", "#f59e0b", "#9cc69b", "#ef4444", "#d1d5db"][i]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div></section></div>
-      <div className="mt-6 grid gap-6 xl:grid-cols-2"><ReportList title="تقرير نقص المخزون" items={low.map((p) => `${p.name} - الكمية الحالية ${p.quantity}`)} /><ReportList title="أكثر المنتجات مبيعًا" items={products.slice(0, 5).map((p, i) => `${i + 1}. ${p.name} - ${number(2000 - i * 312)} وحدة`)} /></div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2"><ReportList title="تقرير نقص المخزون" items={low.map((p) => `${p.name} - الكمية الحالية ${p.quantity}`)} /><ReportList title="أكثر المنتجات مبيعًا" items={products.slice(0, 5).map((p, i) => `${i + 1}. ${p.name}`)} /></div>
     </Page>
   );
 }
