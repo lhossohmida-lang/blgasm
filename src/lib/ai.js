@@ -3,12 +3,13 @@
 export const AI_CONFIG_KEY = "ai.config.v2";
 export const AI_HISTORY_KEY = "ai.history.v1";
 
-export const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+export const DEFAULT_MODEL = "arcee-ai/trinity-large-thinking:free";
 
 /* نماذج قديمة أو غير صحيحة يجب استبدالها تلقائياً */
 const INVALID_MODELS = [
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
 ];
 
 /* يمكن تجاوز نقطة النهاية في dev (مثلاً للتأشير على نشر Vercel جاهز) */
