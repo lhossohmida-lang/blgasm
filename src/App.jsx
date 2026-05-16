@@ -25,6 +25,7 @@ import {
   PackagePlus,
   Printer,
   QrCode,
+  RotateCcw,
   ScanBarcode,
   Search,
   Send,
@@ -61,6 +62,7 @@ import {
   recordPayment,
   receiveProductStock,
   resetData,
+  resetDailySales,
   saveCustomer,
   saveProduct,
   units,
@@ -535,12 +537,17 @@ function Dashboard() {
   const { data: sales } = useCollection("sales");
   const { data: customers } = useCollection("customers");
   const { data: activity } = useCollection("activityLogs");
-  const [showReset, setShowReset] = useState(false);
   const low = products.filter((p) => Number(p.quantity) <= Number(p.minimumStock));
-  const todaySales = sales.reduce((s, sale) => s + Number(sale.total || 0), 0);
+
+  const todaySales = sales.filter((sale) => {
+    const saleDate = sale.createdAt?.toDate?.() || new Date(sale.createdAt);
+    const today = new Date();
+    return saleDate.toDateString() === today.toDateString();
+  }).reduce((s, sale) => s + Number(sale.total || 0), 0);
+
   const debt = customers.reduce((s, c) => s + Number(c.totalDebt || 0), 0);
 
-  const chart = ["6 ص", "9 ص", "12 م", "3 م", "6 م", "9 م"].map((time, i) => ({ time, value: [0, 450, 920, 1580, 1200, todaySales || 1750][i] }));
+  const chart = ["6 ص", "9 ص", "12 م", "3 م", "6 م", "9 م"].map((time, i) => ({ time, value: [0, 450, 920, 1580, 1200, todaySales][i] }));
 
   return (
     <Page title="متجر المواد الغذائية">
@@ -550,7 +557,7 @@ function Dashboard() {
       </div>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Stat icon={Package} title="المخزون" value={number(products.length)} unit="منتج" hint="محدث اليوم" />
-        <Stat icon={BarChart3} title="مبيعات اليوم" value={number(todaySales || 2850)} unit="دج" hint="+12% عن أمس" />
+        <Stat icon={BarChart3} title="مبيعات اليوم" value={number(todaySales)} unit="دج" hint="+12% عن أمس" />
         <Stat icon={User} title="الكريديت" value={number(debt)} unit="دج" hint={`${customers.filter((c) => c.totalDebt > 0).length} زبائن لديهم مستحقات`} tone="orange" />
         <Stat icon={AlertTriangle} title="منتجات قليلة المخزون" value={number(low.length)} unit="منتج" hint="تحتاج إعادة طلب" tone="red" />
       </section>
@@ -569,7 +576,7 @@ function Dashboard() {
         <section className="card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-2xl font-black">مبيعات اليوم</h2>
-            <span className="badge badge-green">{money(todaySales || 2850)}</span>
+            <span className="badge badge-green">{money(todaySales)}</span>
           </div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -585,27 +592,75 @@ function Dashboard() {
         <ActivityList items={activity} low={low} />
       </div>
 
-      {/* ─── منطقة الخطر ─── */}
-      <section className="card mt-8 border-red-200 bg-red-50/30 p-5">
-        <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-black text-red-700">
-              <AlertTriangle className="text-red-500" />
-              منطقة الخطر
-            </h2>
-            <p className="mt-1 text-sm text-red-600">سيتم حذف كل المبيعات والمدفوعات وسجلات النشاط وجميع المنتجات. <b>بيانات الزبائن تبقى سليمة.</b></p>
-          </div>
+    </Page>
+  );
+}
+
+function ResetDailySalesModal({ close }) {
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleReset() {
+    setLoading(true);
+    try {
+      await resetDailySales();
+      setDone(true);
+    } catch (err) {
+      alert("حدث خطأ: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (done) return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="card w-full max-w-md p-7 text-center">
+        <div className="mx-auto mb-4 grid h-20 w-20 place-items-center rounded-full bg-green-50 text-[#0d6a42]"><CheckCircle2 size={44} /></div>
+        <h2 className="text-2xl font-black">تمت إعادة التعيين بنجاح</h2>
+        <p className="mt-2 text-gray-500">تم حذف جميع مبيعات اليوم وإعادة عداد المبيعات اليومية إلى الصفر.</p>
+        <button onClick={close} className="btn-primary mt-6 h-13 w-full font-black">إغلاق</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="card w-full max-w-md p-7">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-2xl font-black text-orange-700"><RotateCcw className="text-orange-500" /> تأكيد</h2>
+          <button onClick={close} className="grid h-10 w-10 place-items-center rounded-full bg-gray-100"><X /></button>
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm">
+          <p className="mb-2 font-black text-orange-700">سيتم حذف:</p>
+          <ul className="space-y-1 text-orange-600">
+            <li>❌ جميع مبيعات اليوم فقط</li>
+            <li>❌ إعادة عداد مبيعات اليوم إلى الصفر</li>
+          </ul>
+          <p className="mt-3 font-bold text-blue-700">ℹ️ جميع البيانات الأخرى تبقى سليمة</p>
+        </div>
+
+        <div className="mb-5 rounded-2xl bg-orange-100 p-3 text-sm font-bold text-orange-700">
+          هل أنت متأكد من رغبتك في إعادة تعيين مبيعات اليوم؟
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={() => setShowReset(true)}
-            className="flex shrink-0 items-center gap-2 rounded-2xl border-2 border-red-300 bg-red-100 px-6 py-3 font-black text-red-700 transition hover:bg-red-200 active:scale-95"
+            onClick={close}
+            className="h-12 rounded-2xl border-2 border-gray-300 font-black text-gray-700 transition hover:bg-gray-50 active:scale-95"
           >
-            <Trash2 size={18} /> إعادة تعيين البيانات
+            إلغاء
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={loading}
+            className={`h-12 rounded-2xl font-black text-white transition ${loading ? "cursor-not-allowed bg-gray-300 text-gray-500" : "bg-orange-600 hover:bg-orange-700 active:scale-95"}`}
+          >
+            {loading ? "جاري الحذف..." : "تأكيد الحذف"}
           </button>
         </div>
-      </section>
-
-      {showReset && <ResetDataModal close={() => setShowReset(false)} />}
-    </Page>
+      </div>
+    </div>
   );
 }
 
@@ -1223,12 +1278,12 @@ function Reports() {
   const debt = customers.reduce((s, c) => s + Number(c.totalDebt || 0), 0);
   const low = products.filter((p) => Number(p.quantity) <= Number(p.minimumStock));
   const byCat = categories.map((c) => ({ name: c, value: products.filter((p) => p.category === c).length || 1 }));
-  const week = ["ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت", "أحد", "اثنين"].map((d, i) => ({ day: d, sales: [1120, 1350, 1620, 1480, 2050, 1780, totalSales || 2850][i] }));
+  const week = ["ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت", "أحد", "اثنين"].map((d, i) => ({ day: d, sales: [0, 0, 0, 0, 0, 0, totalSales][i] }));
 
   return (
     <Page title="التقارير">
       <div className="mb-6 flex flex-wrap gap-3">{["اليوم", "الأسبوع", "الشهر", "نطاق مخصص"].map((p) => <button key={p} onClick={() => setPeriod(p)} className={`rounded-2xl border px-6 py-3 font-bold ${period === p ? "btn-primary" : "bg-white"}`}>{p}</button>)}</div>
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat icon={BarChart3} title="المبيعات" value={number(totalSales || 2850)} unit="دج" hint={`فلتر: ${period}`} /><Stat icon={WalletCards} title="الأرباح" value={number(profit || 785)} unit="دج" hint="+8% عن السابق" /><Stat icon={FileText} title="إجمالي الديون" value={number(debt)} unit="دج" hint="قابل للتحصيل" tone="red" /><Stat icon={Package} title="أكثر المنتجات مبيعًا" value={products[0]?.name || "أرز بسمتي"} unit="" hint="عرض التفاصيل" /></section>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat icon={BarChart3} title="المبيعات" value={number(totalSales)} unit="دج" hint={`فلتر: ${period}`} /><Stat icon={WalletCards} title="الأرباح" value={number(profit)} unit="دج" hint="+8% عن السابق" /><Stat icon={FileText} title="إجمالي الديون" value={number(debt)} unit="دج" hint="قابل للتحصيل" tone="red" /><Stat icon={Package} title="أكثر المنتجات مبيعًا" value={products[0]?.name || "-"} unit="" hint="عرض التفاصيل" /></section>
       <div className="mt-6 grid gap-6 xl:grid-cols-2"><section className="card p-5"><h2 className="mb-4 text-2xl font-black">المبيعات خلال الأسبوع</h2><div className="h-80"><ResponsiveContainer><AreaChart data={week}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" /><YAxis /><Tooltip formatter={(v) => money(v)} /><Area dataKey="sales" stroke="#0d6a42" fill="#e6f2e9" strokeWidth={3} /></AreaChart></ResponsiveContainer></div></section><section className="card p-5"><h2 className="mb-4 text-2xl font-black">توزيع المبيعات حسب الفئات</h2><div className="h-80"><ResponsiveContainer><PieChart><Pie data={byCat} dataKey="value" nameKey="name" innerRadius={70} outerRadius={120}>{byCat.map((_, i) => <Cell key={i} fill={["#0d6a42", "#4c78a8", "#f59e0b", "#9cc69b", "#ef4444", "#d1d5db"][i]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div></section></div>
       <div className="mt-6 grid gap-6 xl:grid-cols-2"><ReportList title="تقرير نقص المخزون" items={low.map((p) => `${p.name} - الكمية الحالية ${p.quantity}`)} /><ReportList title="أكثر المنتجات مبيعًا" items={products.slice(0, 5).map((p, i) => `${i + 1}. ${p.name} - ${number(2000 - i * 312)} وحدة`)} /></div>
     </Page>

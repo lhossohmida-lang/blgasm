@@ -447,11 +447,10 @@ function SettingsModal({ config, close, save }) {
             <details className="mt-2 text-xs text-gray-500">
               <summary className="cursor-pointer font-bold">نماذج مجانية مقترحة</summary>
               <ul className="ltr mt-2 space-y-1 text-left">
-                <li><code>nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free</code> — قراءة فقط</li>
-                <li><code>nvidia/nemotron-3-super-120b-a12b:free</code> — قراءة فقط (أقوى)</li>
                 <li><code>meta-llama/llama-3.3-70b-instruct:free</code> — يدعم الأدوات ✅</li>
                 <li><code>qwen/qwen-2.5-72b-instruct:free</code> — يدعم الأدوات ✅</li>
                 <li><code>google/gemini-2.0-flash-exp:free</code> — يدعم الأدوات ✅</li>
+                <li><code>nvidia/nemotron-3-super-120b-a12b:free</code> — قراءة فقط</li>
               </ul>
             </details>
           </label>

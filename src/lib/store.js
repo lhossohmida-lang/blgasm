@@ -267,6 +267,27 @@ async function resetProductQuantities() {
  * - حذف كل المنتجات (products)
  * الزبائن وديونهم وتاريخهم تبقى كما هي.
  */
+export async function resetDailySales() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const snap = await getDocs(
+    query(
+      collectionRef("sales"),
+      where("createdAt", ">=", today),
+      where("createdAt", "<", tomorrow)
+    )
+  );
+
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+
+  await logActivity("system", "إعادة تعيين مبيعات اليوم", "تم حذف جميع مبيعات اليوم");
+}
+
 export async function resetData() {
   await Promise.all([
     deleteCollection("sales"),

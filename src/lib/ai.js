@@ -3,7 +3,13 @@
 export const AI_CONFIG_KEY = "ai.config.v2";
 export const AI_HISTORY_KEY = "ai.history.v1";
 
-export const DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+export const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+/* نماذج قديمة أو غير صحيحة يجب استبدالها تلقائياً */
+const INVALID_MODELS = [
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+];
 
 /* يمكن تجاوز نقطة النهاية في dev (مثلاً للتأشير على نشر Vercel جاهز) */
 const ENV_API_BASE = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AI_API_BASE) || "";
@@ -13,8 +19,9 @@ export function loadAIConfig() {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
     if (!raw) return { model: DEFAULT_MODEL, requireConfirm: true, apiBase: "" };
     const parsed = JSON.parse(raw);
+    const model = INVALID_MODELS.includes(parsed.model) ? DEFAULT_MODEL : (parsed.model || DEFAULT_MODEL);
     return {
-      model: parsed.model || DEFAULT_MODEL,
+      model,
       requireConfirm: parsed.requireConfirm !== false,
       apiBase: parsed.apiBase || "",
     };
