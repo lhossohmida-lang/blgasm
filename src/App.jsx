@@ -13,11 +13,13 @@ import {
   Calendar,
   Camera,
   CheckCircle2,
+  Clock,
   CreditCard,
   Edit3,
   Eye,
   FileText,
   Home,
+  ImageOff,
   LogOut,
   Menu,
   Package,
@@ -25,6 +27,7 @@ import {
   PackagePlus,
   Printer,
   QrCode,
+  RefreshCw,
   RotateCcw,
   ScanBarcode,
   Search,
@@ -37,6 +40,8 @@ import {
   User,
   Users,
   WalletCards,
+  Wifi,
+  WifiOff,
   X,
 } from "lucide-react";
 import {
@@ -68,6 +73,19 @@ import {
   units,
 } from "./lib/store";
 import { dateTime, money, number, shortDate } from "./lib/format";
+import {
+  filterByExpiryStatus,
+  formatExpiryDate,
+  getExpirySummary,
+  getExpiryStatus,
+  sortByExpiry,
+} from "./lib/expiryUtils";
+import { isCloudinaryConfigured, retryImageUpload } from "./lib/imageUploadService";
+import {
+  loadCollectionFromLocal,
+  saveCollectionToLocal,
+} from "./lib/offlineDb";
+import { useOfflineSync } from "./hooks/useOfflineSync";
 import Assistant from "./Assistant";
 
 /* ─── نغمة المسح ─── */
@@ -101,6 +119,7 @@ const navItems = [
   { to: "/inventory", label: "المخزون", icon: Package },
   { to: "/pos", label: "البيع", icon: ShoppingCart },
   { to: "/credit", label: "الكريديت", icon: Users },
+  { to: "/expiry-alerts", label: "الصلاحية", icon: Clock },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/assistant", label: "المساعد", icon: Sparkles },
 ];
@@ -122,20 +141,60 @@ const emptyProduct = {
 
 const emptyCustomer = { name: "", phone: "", address: "", notes: "", totalDebt: 0 };
 
+/**
+ * Hook محسَّن — يحمّل البيانات من IndexedDB فوراً (حتى لو لا إنترنت)
+ * ثم يشترك في Firestore عند الاتصال ويحدّث IndexedDB.
+ */
 function useCollection(name, sortField = "createdAt") {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const q = query(collection(db, name), orderBy(sortField, "desc"));
-    return onSnapshot(
-      q,
-      (snap) => {
-        setData(snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+    let unsubscribe = () => {};
+    let mounted = true;
+
+    // ① تحميل فوري من IndexedDB (بدون انتظار)
+    loadCollectionFromLocal(name, sortField).then((local) => {
+      if (mounted && local.length > 0) {
+        setData(local);
         setLoading(false);
+      }
+    });
+
+    // ② الاشتراك في Firestore (يعمل أونلاين وأوفلاين — Firestore لديه cache خاص به)
+    const q = query(collection(db, name), orderBy(sortField, "desc"));
+    unsubscribe = onSnapshot(
+      q,
+      async (snap) => {
+        if (!mounted) return;
+        const fresh = snap.docs.map((item) => {
+          const d = item.data();
+          // تحويل Firestore timestamps إلى ISO strings للتخزين المحلي
+          const norm = { id: item.id, ...d };
+          for (const key of ["createdAt", "updatedAt", "lastPurchaseAt", "lastPaymentAt"]) {
+            if (norm[key]?.toDate) norm[key] = norm[key].toDate().toISOString();
+          }
+          return norm;
+        });
+        // حفظ في IndexedDB للاستخدام الأوفلاين
+        await saveCollectionToLocal(name, fresh);
+        if (mounted) {
+          setData(fresh);
+          setLoading(false);
+        }
       },
-      () => setLoading(false)
+      async () => {
+        // عند الفشل (أوفلاين): اقرأ من IndexedDB
+        if (!mounted) return;
+        const local = await loadCollectionFromLocal(name, sortField);
+        if (mounted) { setData(local); setLoading(false); }
+      }
     );
+
+    return () => { mounted = false; unsubscribe(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, sortField]);
+
   return { data, loading };
 }
 
@@ -155,11 +214,14 @@ function App() {
 }
 
 function ProtectedApp({ user }) {
+  const sync = useOfflineSync();
+
   return (
     <div className="app-shell">
       <DesktopSidebar user={user} />
+      <NetworkStatusBar sync={sync} />
       <Routes>
-        <Route path="/" element={<Dashboard user={user} />} />
+        <Route path="/" element={<Dashboard user={user} sync={sync} />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/products/new" element={<ProductForm />} />
         <Route path="/products/:id/edit" element={<ProductForm />} />
@@ -167,6 +229,7 @@ function ProtectedApp({ user }) {
         <Route path="/invoice" element={<Invoice />} />
         <Route path="/credit" element={<CreditCustomers />} />
         <Route path="/customers/:id" element={<CustomerAccount />} />
+        <Route path="/expiry-alerts" element={<ExpiryAlerts />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -340,12 +403,12 @@ function DesktopSidebar({ user }) {
 function BottomNav() {
   const location = useLocation();
   return (
-    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 px-2 py-3 text-white lg:hidden">
+    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 px-1 py-3 text-white lg:hidden">
       {navItems.map(({ to, label, icon: Icon }) => {
         const active = location.pathname === to;
         return (
-          <Link key={to} to={to} className={`flex flex-col items-center gap-1 text-sm ${active ? "text-[#f7c46c]" : "text-white/85"}`}>
-            <Icon fill={active ? "currentColor" : "none"} />
+          <Link key={to} to={to} className={`flex flex-col items-center gap-0.5 text-[10px] ${active ? "text-[#f7c46c]" : "text-white/85"}`}>
+            <Icon size={20} fill={active ? "currentColor" : "none"} />
             <span>{label}</span>
           </Link>
         );
@@ -531,12 +594,14 @@ function ReceiveStockModal({ product, close }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ sync }) {
   const { data: products } = useCollection("products");
   const { data: sales } = useCollection("sales");
   const { data: customers } = useCollection("customers");
   const { data: activity } = useCollection("activityLogs");
   const low = products.filter((p) => Number(p.quantity) <= Number(p.minimumStock));
+  const expirySummary = getExpirySummary(products);
+  const totalExpiryAlerts = expirySummary.expired + expirySummary.critical + expirySummary.warning;
 
   const todaySales = sales.filter((sale) => {
     const saleDate = sale.createdAt?.toDate?.() || new Date(sale.createdAt);
@@ -560,6 +625,41 @@ function Dashboard() {
         <Stat icon={User} title="الكريديت" value={number(debt)} unit="دج" hint={`${customers.filter((c) => c.totalDebt > 0).length} زبائن لديهم مستحقات`} tone="orange" />
         <Stat icon={AlertTriangle} title="منتجات قليلة المخزون" value={number(low.length)} unit="منتج" hint="تحتاج إعادة طلب" tone="red" />
       </section>
+
+      {/* ─── بطاقة تنبيه الصلاحية ─── */}
+      {totalExpiryAlerts > 0 && (
+        <Link to="/expiry-alerts" className="mt-4 flex items-center gap-4 rounded-3xl border border-orange-200 bg-orange-50 p-4 transition hover:bg-orange-100">
+          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-orange-100 text-orange-600">
+            <Clock size={28} />
+          </div>
+          <div className="flex-1">
+            <b className="text-lg text-orange-800">
+              {expirySummary.expired > 0
+                ? `${expirySummary.expired} منتجات منتهية الصلاحية`
+                : expirySummary.critical > 0
+                ? `${expirySummary.critical} منتجات تنتهي خلال أسبوع`
+                : `${expirySummary.warning} منتجات تنتهي خلال شهر`}
+            </b>
+            <p className="text-sm text-orange-600">اضغط لعرض تفاصيل تنبيهات الصلاحية</p>
+          </div>
+          <div className="flex gap-2">
+            {expirySummary.expired > 0 && <span className="badge bg-red-100 border-red-300 text-red-700">{expirySummary.expired} منتهية</span>}
+            {expirySummary.critical > 0 && <span className="badge bg-orange-100 border-orange-300 text-orange-700">{expirySummary.critical} حرجة</span>}
+            {expirySummary.warning > 0 && <span className="badge bg-yellow-100 border-yellow-300 text-yellow-700">{expirySummary.warning} تحذير</span>}
+          </div>
+        </Link>
+      )}
+
+      {/* ─── بطاقة حالة المزامنة (أوفلاين) ─── */}
+      {sync && !sync.isOnline && (
+        <div className="mt-4 flex items-center gap-3 rounded-3xl border border-gray-200 bg-gray-50 p-4">
+          <WifiOff size={22} className="text-gray-500 shrink-0" />
+          <p className="text-sm text-gray-600 font-bold">
+            أنت تعمل حالياً بدون إنترنت — سيتم حفظ التغييرات ومزامنتها تلقائياً عند العودة
+            {sync.pendingCount > 0 && ` (${sync.pendingCount} عملية معلقة)`}
+          </p>
+        </div>
+      )}
 
       <section className="card mt-6 p-5">
         <h2 className="mb-5 text-2xl font-black">إجراءات سريعة</h2>
@@ -780,9 +880,19 @@ function Inventory() {
   const [search, setSearch] = useState("");
   const [stockQrInput, setStockQrInput] = useState("");
   const [cat, setCat] = useState("كل المنتجات");
+  const [expiryFilter, setExpiryFilter] = useState("all");
+  const [expirySort, setExpirySort] = useState("none");
   const [scanner, setScanner] = useState(false);
   const [receiving, setReceiving] = useState(null);
-  const filtered = products.filter((p) => (cat === "كل المنتجات" || p.category === cat) && `${p.name} ${p.barcode} ${p.qrCode || ""}`.includes(search));
+
+  let filtered = products.filter(
+    (p) => (cat === "كل المنتجات" || p.category === cat) &&
+      `${p.name} ${p.barcode} ${p.qrCode || ""}`.includes(search)
+  );
+  filtered = filterByExpiryStatus(filtered, expiryFilter);
+  if (expirySort === "asc") filtered = sortByExpiry(filtered, "asc");
+  else if (expirySort === "desc") filtered = sortByExpiry(filtered, "desc");
+
   const low = products.filter((p) => Number(p.quantity) <= Number(p.minimumStock));
 
   function handleStockQr(raw) {
@@ -817,8 +927,30 @@ function Inventory() {
         <input className="input ltr text-left" value={stockQrInput} onChange={(e) => setStockQrInput(e.target.value)} placeholder="مرر المنتج على الماسح أو الصق الكود هنا ثم Enter" />
         <button className="btn-primary h-12 font-black">استلام</button>
       </form>
-      <div className="mb-6 flex gap-3 overflow-auto pb-2">
+      <div className="mb-3 flex gap-3 overflow-auto pb-2">
         {["كل المنتجات", ...categories].map((item) => <button key={item} onClick={() => setCat(item)} className={`shrink-0 rounded-2xl border px-5 py-3 font-bold ${cat === item ? "btn-primary" : "bg-white"}`}>{item}</button>)}
+      </div>
+      {/* ─── فلاتر الصلاحية ─── */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-bold text-gray-600">الصلاحية:</span>
+        {[
+          { val: "all", label: "الكل" },
+          { val: "normal", label: "✅ سليم" },
+          { val: "expiring-month", label: "🟠 ينتهي قريباً" },
+          { val: "expiring-week", label: "🔴 أسبوع أو أقل" },
+          { val: "expired", label: "⛔ منتهي" },
+        ].map(({ val, label }) => (
+          <button key={val} onClick={() => setExpiryFilter(val)}
+            className={`rounded-2xl border px-4 py-2 text-sm font-bold transition ${expiryFilter === val ? "btn-primary" : "bg-white"}`}>
+            {label}
+          </button>
+        ))}
+        <select value={expirySort} onChange={(e) => setExpirySort(e.target.value)}
+          className="mr-auto rounded-2xl border bg-white px-4 py-2 text-sm font-bold">
+          <option value="none">ترتيب افتراضي</option>
+          <option value="asc">الأقرب انتهاءً أولاً</option>
+          <option value="desc">الأبعد انتهاءً أولاً</option>
+        </select>
       </div>
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between p-5"><h2 className="text-2xl font-black">قائمة المنتجات</h2><span className="text-gray-500">{number(filtered.length)} منتجات</span></div>
@@ -841,14 +973,40 @@ function Inventory() {
 
 function ProductRow({ product }) {
   const state = Number(product.quantity) <= 0 ? ["نفد من المخزون", "badge-red"] : Number(product.quantity) <= Number(product.minimumStock) ? ["كمية منخفضة", "badge-orange"] : ["متوفر", "badge-green"];
+  const expiry = getExpiryStatus(product.expiryDate);
   return (
-    <tr className="table-row">
-      <td className="p-4"><div className="flex items-center gap-3"><ProductImage p={product} /><div><b>{product.name}</b><p><span className={`badge ${state[1]}`}>{state[0]}</span></p></div></div></td>
+    <tr className={`table-row ${expiry?.status === "expired" ? "bg-red-50/40" : expiry?.status === "critical" ? "bg-red-50/20" : expiry?.status === "warning" ? "bg-orange-50/20" : ""}`}>
+      <td className="p-4">
+        <div className="flex items-center gap-3">
+          <ProductImage p={product} />
+          <div>
+            <b>{product.name}</b>
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className={`badge ${state[1]}`}>{state[0]}</span>
+              {expiry && expiry.status !== "normal" && (
+                <span className={expiry.badgeClass}>
+                  {expiry.status === "expired" ? "⛔" : expiry.status === "critical" ? "🔴" : "🟠"}
+                  {expiry.label}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </td>
       <td className="p-4 text-gray-600">{product.barcode}</td>
       <td className="p-4 font-black text-[#0d6a42]">{product.quantity} {product.unit}</td>
       <td className="p-4">{money(product.purchasePrice)}</td>
       <td className="p-4">{money(product.salePrice)}</td>
-      <td className="p-4">{product.category}</td>
+      <td className="p-4">
+        <div>
+          <span>{product.category}</span>
+          {product.expiryDate && (
+            <p className={`text-xs mt-1 ${expiry?.color || "text-gray-500"}`}>
+              {formatExpiryDate(product.expiryDate)}
+            </p>
+          )}
+        </div>
+      </td>
       <td className="p-4"><div className="flex gap-2"><Link to={`/products/${product.id}/edit`} className="grid h-10 w-10 place-items-center rounded-xl bg-green-50 text-[#0d6a42]"><Edit3 size={18} /></Link><button onClick={() => confirm("حذف المنتج؟") && deleteProduct(product.id)} className="grid h-10 w-10 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></button></div></td>
     </tr>
   );
@@ -868,8 +1026,8 @@ function ProductForm() {
   const [file, setFile] = useState(null);
   const [scanner, setScanner] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
 
-  // Firestore data arrives after the route renders, so the edit form is hydrated once the product is found.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (editing) setForm({ ...emptyProduct, ...editing }); }, [editing]);
   useEffect(() => {
@@ -884,20 +1042,49 @@ function ProductForm() {
   async function submit(e) {
     e.preventDefault();
     setSaving(true);
-    await saveProduct(form, file, id);
-    setSaving(false);
-    navigate("/inventory");
+    setSaveMsg("");
+    try {
+      await saveProduct(form, file, id);
+      if (!navigator.onLine) {
+        setSaveMsg("تم حفظ المنتج محلياً — سيتم مزامنته عند عودة الإنترنت");
+      }
+      navigate("/inventory");
+    } catch (err) {
+      alert(err.message || "تعذر حفظ المنتج");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Page title={id ? "تعديل منتج" : "إضافة منتج"} back>
       <div className="grid gap-6 xl:grid-cols-[1.4fr_.8fr]">
         <form onSubmit={submit} className="card p-6">
-          <label className="mb-4 grid min-h-44 place-items-center rounded-3xl border border-dashed border-gray-300 bg-white text-center text-gray-500">
-            <UploadCloud className="mx-auto mb-2 text-[#0d6a42]" size={38} />
-            <span>اسحب الصورة هنا أو اضغط للاختيار</span><small>JPG, PNG حتى 2MB</small>
+          <label className="mb-4 grid min-h-44 place-items-center rounded-3xl border border-dashed border-gray-300 bg-white text-center text-gray-500 cursor-pointer hover:border-[#0d6a42] transition">
+            {preview
+              ? <img src={preview} alt="معاينة" className="h-40 w-full rounded-3xl object-cover" />
+              : <>
+                  <UploadCloud className="mx-auto mb-2 text-[#0d6a42]" size={38} />
+                  <span>اسحب الصورة هنا أو اضغط للاختيار</span>
+                  <small className="mt-1">JPG, PNG حتى 5MB</small>
+                </>
+            }
             <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0])} />
           </label>
+          {/* حالة الصورة */}
+          {!isCloudinaryConfigured() && (
+            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-700">
+              <ImageOff size={16} /> Cloudinary غير مهيأ — الصور تُحفظ نصياً أوفلاين فقط
+            </div>
+          )}
+          {form.imagePending && (
+            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
+              <Clock size={16} /> الصورة بانتظار الرفع — ستُرفع تلقائياً عند الاتصال
+            </div>
+          )}
+          {saveMsg && (
+            <div className="mb-4 rounded-2xl bg-blue-50 p-3 text-sm font-bold text-blue-700">{saveMsg}</div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="اسم المنتج *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
             <div>
@@ -1288,6 +1475,191 @@ function Reports() {
 
 function ReportList({ title, items }) {
   return <section className="card p-5"><h2 className="mb-4 text-2xl font-black">{title}</h2><div className="divide-y">{items.length ? items.map((item) => <p key={item} className="py-3">{item}</p>) : <p className="py-3 text-gray-500">لا توجد بيانات حالية.</p>}</div></section>;
+}
+
+/* ══════════════════════════════════════════════
+   شريط حالة الشبكة والمزامنة
+══════════════════════════════════════════════ */
+function NetworkStatusBar({ sync }) {
+  const { isOnline, pendingCount, syncStatus, notification, forceSync } = sync;
+  const [visible, setVisible] = useState(false);
+
+  // أظهر الشريط عند تغيير الحالة
+  useEffect(() => {
+    setVisible(!isOnline || pendingCount > 0 || notification !== null);
+  }, [isOnline, pendingCount, notification]);
+
+  if (!visible) return null;
+
+  let barClass = "fixed top-0 inset-x-0 z-[60] no-print";
+  let content;
+
+  if (!isOnline) {
+    barClass += " bg-gray-800 text-white";
+    content = (
+      <div className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold">
+        <WifiOff size={15} />
+        <span>غير متصل بالإنترنت — التغييرات تُحفظ محلياً{pendingCount > 0 ? ` (${pendingCount} معلقة)` : ""}</span>
+      </div>
+    );
+  } else if (syncStatus === "syncing") {
+    barClass += " bg-blue-600 text-white";
+    content = (
+      <div className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold">
+        <RefreshCw size={15} className="animate-spin" />
+        <span>جاري مزامنة البيانات...</span>
+      </div>
+    );
+  } else if (notification) {
+    const isError = syncStatus === "error" || syncStatus === "partial";
+    barClass += isError ? " bg-orange-500 text-white" : " bg-[#0d6a42] text-white";
+    content = (
+      <div className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold">
+        {isError ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+        <span>{notification}</span>
+        {pendingCount > 0 && isOnline && (
+          <button onClick={forceSync} className="mr-3 rounded-full bg-white/20 px-3 py-0.5 text-xs hover:bg-white/30">
+            إعادة المحاولة
+          </button>
+        )}
+        <button onClick={() => setVisible(false)} className="mr-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">×</button>
+      </div>
+    );
+  } else if (isOnline && pendingCount > 0) {
+    barClass += " bg-yellow-500 text-white";
+    content = (
+      <div className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold">
+        <Clock size={15} />
+        <span>{pendingCount} عملية بانتظار المزامنة</span>
+        <button onClick={forceSync} className="mr-3 rounded-full bg-white/20 px-3 py-0.5 text-xs hover:bg-white/30">
+          مزامنة الآن
+        </button>
+      </div>
+    );
+  } else {
+    return null;
+  }
+
+  return <div className={barClass}>{content}</div>;
+}
+
+/* ══════════════════════════════════════════════
+   صفحة تنبيهات الصلاحية
+══════════════════════════════════════════════ */
+function ExpiryAlerts() {
+  const { data: products } = useCollection("products");
+
+  const withExpiry = products.filter((p) => p.expiryDate);
+  const expired = withExpiry.filter((p) => getExpiryStatus(p.expiryDate)?.status === "expired");
+  const critical = withExpiry.filter((p) => getExpiryStatus(p.expiryDate)?.status === "critical");
+  const warning = withExpiry.filter((p) => getExpiryStatus(p.expiryDate)?.status === "warning");
+
+  const expiredSorted = sortByExpiry(expired, "asc");
+  const criticalSorted = sortByExpiry(critical, "asc");
+  const warningSorted = sortByExpiry(warning, "asc");
+
+  return (
+    <Page title="تنبيهات الصلاحية">
+      {/* إحصائيات سريعة */}
+      <section className="mb-6 grid gap-4 md:grid-cols-3">
+        <div className="card border-red-200 p-5 bg-red-50/50">
+          <div className="mb-2 grid h-12 w-12 place-items-center rounded-2xl bg-red-100 text-red-700"><AlertTriangle /></div>
+          <h3 className="font-black text-red-800">منتهية الصلاحية</h3>
+          <div className="mt-1 text-4xl font-black text-red-700">{expired.length}</div>
+          <p className="mt-1 text-sm text-red-600">منتج</p>
+        </div>
+        <div className="card border-orange-200 p-5 bg-orange-50/50">
+          <div className="mb-2 grid h-12 w-12 place-items-center rounded-2xl bg-orange-100 text-orange-700"><Clock /></div>
+          <h3 className="font-black text-orange-800">تنتهي خلال أسبوع</h3>
+          <div className="mt-1 text-4xl font-black text-orange-700">{critical.length}</div>
+          <p className="mt-1 text-sm text-orange-600">منتج</p>
+        </div>
+        <div className="card border-yellow-200 p-5 bg-yellow-50/50">
+          <div className="mb-2 grid h-12 w-12 place-items-center rounded-2xl bg-yellow-100 text-yellow-700"><Bell /></div>
+          <h3 className="font-black text-yellow-800">تنتهي خلال شهر</h3>
+          <div className="mt-1 text-4xl font-black text-yellow-700">{warning.length}</div>
+          <p className="mt-1 text-sm text-yellow-600">منتج</p>
+        </div>
+      </section>
+
+      {expired.length === 0 && critical.length === 0 && warning.length === 0 && (
+        <div className="card p-10 text-center">
+          <CheckCircle2 size={56} className="mx-auto mb-4 text-[#0d6a42]" />
+          <h2 className="text-2xl font-black text-[#063f2b]">لا توجد تنبيهات</h2>
+          <p className="mt-2 text-gray-500">جميع المنتجات ذات التواريخ المضبوطة في حالة جيدة</p>
+        </div>
+      )}
+
+      {/* منتهية الصلاحية */}
+      {expiredSorted.length > 0 && (
+        <ExpirySection title="⛔ منتهية الصلاحية" products={expiredSorted} colorClass="border-red-300 bg-red-50" />
+      )}
+
+      {/* تنتهي خلال أسبوع */}
+      {criticalSorted.length > 0 && (
+        <ExpirySection title="🔴 تنتهي خلال أسبوع" products={criticalSorted} colorClass="border-orange-300 bg-orange-50" />
+      )}
+
+      {/* تنتهي خلال شهر */}
+      {warningSorted.length > 0 && (
+        <ExpirySection title="🟠 تنتهي خلال شهر" products={warningSorted} colorClass="border-yellow-200 bg-yellow-50/50" />
+      )}
+    </Page>
+  );
+}
+
+function ExpirySection({ title, products, colorClass }) {
+  return (
+    <section className={`card mb-6 overflow-hidden border ${colorClass}`}>
+      <div className="flex items-center justify-between p-5">
+        <h2 className="text-xl font-black">{title}</h2>
+        <span className="rounded-full bg-white/70 px-3 py-1 text-sm font-bold">{products.length} منتجات</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-right">
+          <thead className="bg-black/5">
+            <tr>
+              {["المنتج", "الكمية", "تاريخ الانتهاء", "الحالة", ""].map((h) => (
+                <th key={h} className="p-4 text-sm">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => {
+              const expiry = getExpiryStatus(p.expiryDate);
+              return (
+                <tr key={p.id} className="border-t border-black/5">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <ProductImage p={p} className="h-12 w-12" />
+                      <div>
+                        <b>{p.name}</b>
+                        <p className="text-xs text-gray-500">{p.category}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4 font-black text-[#0d6a42]">{p.quantity} {p.unit}</td>
+                  <td className="p-4">
+                    <div>
+                      <b>{formatExpiryDate(p.expiryDate)}</b>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    {expiry && <span className={expiry.badgeClass}>{expiry.label}</span>}
+                  </td>
+                  <td className="p-4">
+                    <Link to={`/products/${p.id}/edit`} className="btn-ghost px-3 py-2 text-sm">
+                      <Edit3 size={14} className="inline ml-1" /> تعديل
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 export default App;
