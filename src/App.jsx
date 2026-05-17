@@ -35,6 +35,7 @@ import {
   Share2,
   ShoppingCart,
   Sparkles,
+  Store,
   Trash2,
   UploadCloud,
   User,
@@ -87,6 +88,8 @@ import {
 } from "./lib/offlineDb";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import Assistant from "./Assistant";
+import OnlineStore from "./OnlineStore";
+import { AdminOnlineStore } from "./AdminOnlineStore";
 
 /* ─── نغمة المسح ─── */
 function beep() {
@@ -120,6 +123,7 @@ const navItems = [
   { to: "/pos", label: "البيع", icon: ShoppingCart },
   { to: "/credit", label: "الكريديت", icon: Users },
   { to: "/expiry-alerts", label: "الصلاحية", icon: Clock },
+  { to: "/online-store", label: "المتجر", icon: Store },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/assistant", label: "المساعد", icon: Sparkles },
 ];
@@ -199,6 +203,17 @@ function useCollection(name, sortField = "createdAt") {
 }
 
 function App() {
+  const location = useLocation();
+
+  // مسار عام للزبائن — بدون تحقق من الجلسة
+  if (location.pathname.startsWith("/store")) {
+    return <OnlineStore />;
+  }
+
+  return <AdminApp />;
+}
+
+function AdminApp() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
 
@@ -230,6 +245,7 @@ function ProtectedApp({ user }) {
         <Route path="/credit" element={<CreditCustomers />} />
         <Route path="/customers/:id" element={<CustomerAccount />} />
         <Route path="/expiry-alerts" element={<ExpiryAlerts />} />
+        <Route path="/online-store" element={<Page title="المتجر الإلكتروني"><AdminOnlineStore /></Page>} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -403,7 +419,7 @@ function DesktopSidebar({ user }) {
 function BottomNav() {
   const location = useLocation();
   return (
-    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 px-1 py-3 text-white lg:hidden">
+    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-8 px-1 py-2 text-white lg:hidden">
       {navItems.map(({ to, label, icon: Icon }) => {
         const active = location.pathname === to;
         return (

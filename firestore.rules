@@ -1,13 +1,92 @@
 rules_version = '2';
 
+/**
+ * قواعد Firestore — متجر المواد الغذائية (blgasm)
+ *
+ * ملخص الصلاحيات:
+ * ─ الإدارة (مستخدم مسجّل): قراءة وكتابة كل شيء.
+ * ─ الزبائن (غير مسجّلين):
+ *     • قراءة المنتجات المرئية فقط (isOnlineVisible = true)
+ *     • قراءة إعدادات المتجر
+ *     • إنشاء طلبات جديدة (onlineOrders)
+ *     • لا يمكنهم تعديل أو حذف أي شيء
+ */
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+
+    // ── دالة مساعدة: هل المستخدم مسجّل دخول؟ ──
+    function isAdmin() {
       return request.auth != null;
     }
 
+    // ── المنتجات ──
+    match /products/{productId} {
+      // الإدارة: كل الصلاحيات
+      allow read, write: if isAdmin();
+
+      // الزبائن: قراءة المنتجات المرئية فقط
+      allow read: if !isAdmin()
+        && resource.data.isOnlineVisible == true;
+    }
+
+    // ── الطلبات الأونلاين ──
+    match /onlineOrders/{orderId} {
+      // الإدارة: كل الصلاحيات
+      allow read, write: if isAdmin();
+
+      // الزبائن: إنشاء طلب جديد فقط
+      allow create: if !isAdmin()
+        && request.resource.data.status == "new"
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() > 0
+        && request.resource.data.customerPhone is string
+        && request.resource.data.customerPhone.size() > 0
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0;
+    }
+
+    // ── إعدادات المتجر ──
+    match /storeSettings/{doc} {
+      // الإدارة: كل الصلاحيات
+      allow read, write: if isAdmin();
+
+      // الزبائن: قراءة الإعدادات فقط
+      allow read: if true;
+    }
+
+    // ── بقية Collections (الإدارة فقط) ──
+    match /sales/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /customers/{docId} {
+      allow read, write: if isAdmin();
+
+      match /transactions/{txId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    match /payments/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /activityLogs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /syncQueue/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /pendingImages/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── catch-all: أي Collection غير مذكور يتطلب جلسة إدارية ──
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if isAdmin();
     }
   }
 }
