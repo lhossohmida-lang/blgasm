@@ -41,12 +41,16 @@ button { cursor: pointer; }
   .app-shell { padding: 0 !important; background: white; }
   .card { box-shadow: none; border: none; }
 
-  /* ─── إيصال حراري ─── */
-  body.receipt-58 { width: 58mm !important; }
-  body.receipt-80 { width: 80mm !important; }
+  /* ─── أحجام الورق الحراري (Phomemo + طابعات أخرى) ─── */
+  body.receipt-53 { width: 53mm !important; }   /* Phomemo M02/T02 */
+  body.receipt-58 { width: 58mm !important; }   /* طابعات 58mm  */
+  body.receipt-80 { width: 80mm !important; }   /* طابعات 80mm  */
+  body.receipt-110 { width: 110mm !important; } /* طابعات 110mm */
 
+  body.receipt-53 .receipt-page,
   body.receipt-58 .receipt-page,
-  body.receipt-80 .receipt-page {
+  body.receipt-80 .receipt-page,
+  body.receipt-110 .receipt-page {
     width: 100% !important;
     max-width: 100% !important;
     padding: 0 !important;
@@ -56,6 +60,9 @@ button { cursor: pointer; }
     font-size: 11px !important;
   }
 
+  /* Phomemo 53mm — خط أصغر بسبب ضيق الورق */
+  body.receipt-53 .receipt-page { font-size: 9px !important; }
+
   .receipt-page * { color: #000 !important; background: transparent !important; }
   .receipt-page .receipt-logo { display: none; }
   .receipt-page .receipt-divider { border-top: 1px dashed #000; margin: 4px 0; }
@@ -64,13 +71,23 @@ button { cursor: pointer; }
   .receipt-page .receipt-total { font-size: 13px; font-weight: 900; }
   .receipt-page .receipt-footer { text-align: center; font-size: 9px; margin-top: 6px; }
 
+  /* بطاقة المنتج (Product Label) */
+  .product-label { page-break-inside: avoid; }
+
   /* إخفاء كل شيء ما عدا الإيصال عند الطباعة الحرارية */
+  body.receipt-53 *:not(.receipt-page):not(.receipt-page *),
   body.receipt-58 *:not(.receipt-page):not(.receipt-page *),
-  body.receipt-80 *:not(.receipt-page):not(.receipt-page *) {
+  body.receipt-80 *:not(.receipt-page):not(.receipt-page *),
+  body.receipt-110 *:not(.receipt-page):not(.receipt-page *) {
     display: none !important;
   }
+  body.receipt-53 .receipt-page,
   body.receipt-58 .receipt-page,
-  body.receipt-80 .receipt-page {
+  body.receipt-80 .receipt-page,
+  body.receipt-110 .receipt-page {
     display: block !important;
   }
+
+  /* @page لكل حجم ورق حراري */
+  @page { margin: 0; }
 }

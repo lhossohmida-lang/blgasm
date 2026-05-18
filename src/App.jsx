@@ -32,6 +32,7 @@ import {
   ScanBarcode,
   Search,
   Send,
+  Settings,
   Share2,
   ShoppingCart,
   Sparkles,
@@ -87,9 +88,11 @@ import {
   saveCollectionToLocal,
 } from "./lib/offlineDb";
 import { useOfflineSync } from "./hooks/useOfflineSync";
+import { calcWeightPrice, formatStockDisplay, formatWeight } from "./lib/weightUtils";
 import Assistant from "./Assistant";
 import OnlineStore from "./OnlineStore";
 import { AdminOnlineStore } from "./AdminOnlineStore";
+import { PrintLabelButton, PrintSettingsPage } from "./PhomemoPrint";
 
 /* ─── نغمة المسح ─── */
 function beep() {
@@ -141,6 +144,7 @@ const emptyProduct = {
   expiryDate: "",
   supplier: "",
   imageUrl: "",
+  isWeightBased: false,
 };
 
 const emptyCustomer = { name: "", phone: "", address: "", notes: "", totalDebt: 0 };
@@ -246,6 +250,7 @@ function ProtectedApp({ user }) {
         <Route path="/customers/:id" element={<CustomerAccount />} />
         <Route path="/expiry-alerts" element={<ExpiryAlerts />} />
         <Route path="/online-store" element={<Page title="المتجر الإلكتروني"><AdminOnlineStore /></Page>} />
+        <Route path="/print-settings" element={<Page title="إعدادات الطباعة الحرارية" back><PrintSettingsPage /></Page>} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -988,7 +993,14 @@ function Inventory() {
 }
 
 function ProductRow({ product }) {
-  const state = Number(product.quantity) <= 0 ? ["نفد من المخزون", "badge-red"] : Number(product.quantity) <= Number(product.minimumStock) ? ["كمية منخفضة", "badge-orange"] : ["متوفر", "badge-green"];
+  const stockDisplay = formatStockDisplay(product);
+  const isLow = product.isWeightBased
+    ? Number(product.stockInGrams || 0) <= Number(product.minimumStock || 0) * 1000
+    : Number(product.quantity) <= Number(product.minimumStock);
+  const isEmpty = product.isWeightBased
+    ? Number(product.stockInGrams || 0) <= 0
+    : Number(product.quantity) <= 0;
+  const state = isEmpty ? ["نفد من المخزون", "badge-red"] : isLow ? ["كمية منخفضة", "badge-orange"] : ["متوفر", "badge-green"];
   const expiry = getExpiryStatus(product.expiryDate);
   return (
     <tr className={`table-row ${expiry?.status === "expired" ? "bg-red-50/40" : expiry?.status === "critical" ? "bg-red-50/20" : expiry?.status === "warning" ? "bg-orange-50/20" : ""}`}>
@@ -999,6 +1011,7 @@ function ProductRow({ product }) {
             <b>{product.name}</b>
             <div className="mt-1 flex flex-wrap gap-1">
               <span className={`badge ${state[1]}`}>{state[0]}</span>
+              {product.isWeightBased && <span className="badge bg-amber-100 text-amber-700">⚖️ وزني</span>}
               {expiry && expiry.status !== "normal" && (
                 <span className={expiry.badgeClass}>
                   {expiry.status === "expired" ? "⛔" : expiry.status === "critical" ? "🔴" : "🟠"}
@@ -1010,9 +1023,14 @@ function ProductRow({ product }) {
         </div>
       </td>
       <td className="p-4 text-gray-600">{product.barcode}</td>
-      <td className="p-4 font-black text-[#0d6a42]">{product.quantity} {product.unit}</td>
+      <td className="p-4 font-black text-[#0d6a42]">{stockDisplay}</td>
       <td className="p-4">{money(product.purchasePrice)}</td>
-      <td className="p-4">{money(product.salePrice)}</td>
+      <td className="p-4">
+        {product.isWeightBased
+          ? <span title="سعر الكيلوغرام">{money(product.salePrice)}<span className="text-xs text-gray-400">/كغ</span></span>
+          : money(product.salePrice)
+        }
+      </td>
       <td className="p-4">
         <div>
           <span>{product.category}</span>
@@ -1023,7 +1041,11 @@ function ProductRow({ product }) {
           )}
         </div>
       </td>
-      <td className="p-4"><div className="flex gap-2"><Link to={`/products/${product.id}/edit`} className="grid h-10 w-10 place-items-center rounded-xl bg-green-50 text-[#0d6a42]"><Edit3 size={18} /></Link><button onClick={() => confirm("حذف المنتج؟") && deleteProduct(product.id)} className="grid h-10 w-10 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></button></div></td>
+      <td className="p-4"><div className="flex gap-2">
+        <Link to={`/products/${product.id}/edit`} className="grid h-10 w-10 place-items-center rounded-xl bg-green-50 text-[#0d6a42]"><Edit3 size={18} /></Link>
+        <PrintLabelButton product={product} />
+        <button onClick={() => confirm("حذف المنتج؟") && deleteProduct(product.id)} className="grid h-10 w-10 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></button>
+      </div></td>
     </tr>
   );
 }
@@ -1111,12 +1133,49 @@ function ProductForm() {
             </div>
             <Select label="الفئة *" value={form.category} options={categories} onChange={(v) => setForm({ ...form, category: v })} />
             <Field label="سعر الشراء (دج) *" type="number" value={form.purchasePrice} onChange={(v) => setForm({ ...form, purchasePrice: v })} required />
-            <Field label="سعر البيع (دج) *" type="number" value={form.salePrice} onChange={(v) => setForm({ ...form, salePrice: v })} required />
-            <Field label="الكمية *" type="number" value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} required />
-            <Select label="الوحدة *" value={form.unit} options={units} onChange={(v) => setForm({ ...form, unit: v })} />
-            <Field label="الحد الأدنى للمخزون *" type="number" value={form.minimumStock} onChange={(v) => setForm({ ...form, minimumStock: v })} required />
+            <Field
+              label={form.isWeightBased ? "سعر الكيلوغرام (دج) *" : "سعر البيع (دج) *"}
+              type="number" value={form.salePrice}
+              onChange={(v) => setForm({ ...form, salePrice: v })}
+              required
+            />
+            <Field
+              label={form.isWeightBased ? "المخزون الأولي (كغ) *" : "الكمية *"}
+              type="number" value={form.quantity}
+              onChange={(v) => setForm({ ...form, quantity: v })}
+              required
+            />
+            {!form.isWeightBased && (
+              <Select label="الوحدة *" value={form.unit} options={units} onChange={(v) => setForm({ ...form, unit: v })} />
+            )}
+            <Field
+              label={form.isWeightBased ? "الحد الأدنى للمخزون (كغ) *" : "الحد الأدنى للمخزون *"}
+              type="number" value={form.minimumStock}
+              onChange={(v) => setForm({ ...form, minimumStock: v })}
+              required
+            />
             <Field label="تاريخ الانتهاء (اختياري)" type="date" value={form.expiryDate || ""} onChange={(v) => setForm({ ...form, expiryDate: v })} />
             <Field label="المورد (اختياري)" value={form.supplier || ""} onChange={(v) => setForm({ ...form, supplier: v })} />
+            {/* ─── تبديل منتج وزني ─── */}
+            <div className="md:col-span-2">
+              <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-amber-50 p-4 transition hover:border-amber-300">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-amber-600"
+                  checked={!!form.isWeightBased}
+                  onChange={(e) => setForm({ ...form, isWeightBased: e.target.checked, unit: e.target.checked ? "كغ" : "قطعة" })}
+                />
+                <div>
+                  <b>⚖️ منتج وزني (يُباع بالغرام)</b>
+                  <p className="text-xs text-gray-500">المخزون يُدخَل بالكيلوغرام، والبيع يُحسب بالغرام تلقائياً</p>
+                </div>
+              </label>
+              {form.isWeightBased && (
+                <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-800">
+                  💡 سعر البيع = سعر الكغ الواحد. عند البيع ستُدخل الكمية بالغرام وسيُحسب السعر تلقائياً.
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-2"><button className="btn-primary h-14 font-black">{saving ? "جاري الحفظ..." : "حفظ المنتج"}</button><button type="button" onClick={() => navigate("/inventory")} className="btn-ghost h-14 font-black text-orange-600">إلغاء</button></div>
         </form>
@@ -1155,16 +1214,47 @@ function POS({ user }) {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [customerId, setCustomerId] = useState("");
-  const filtered = products.filter((p) => Number(p.quantity) > 0 && `${p.name} ${p.barcode} ${p.qrCode || ""}`.includes(search)).slice(0, 12);
+  const [weightModal, setWeightModal] = useState(null); // منتج وزني بانتظار إدخال الغرامات
+
+  const filtered = products.filter((p) => {
+    const hasStock = p.isWeightBased ? Number(p.stockInGrams || 0) > 0 : Number(p.quantity) > 0;
+    return hasStock && `${p.name} ${p.barcode} ${p.qrCode || ""}`.includes(search);
+  }).slice(0, 12);
   const subtotal = cart.reduce((s, i) => s + i.salePrice * i.cartQty, 0);
   const total = Math.max(0, subtotal - Number(discount || 0));
   const customer = customers.find((c) => c.id === customerId);
 
   function add(product) {
-    setCart((old) => old.some((i) => i.id === product.id) ? old.map((i) => i.id === product.id ? { ...i, cartQty: Math.min(i.cartQty + 1, product.quantity) } : i) : [{ ...product, cartQty: 1 }, ...old]);
+    if (product.isWeightBased) {
+      setWeightModal(product); // افتح مودال الوزن
+      return;
+    }
+    setCart((old) => old.some((i) => i.id === product.id)
+      ? old.map((i) => i.id === product.id ? { ...i, cartQty: Math.min(i.cartQty + 1, product.quantity) } : i)
+      : [{ ...product, cartQty: 1 }, ...old]);
+  }
+  function addWeightItem(product, grams) {
+    const price = calcWeightPrice(product.salePrice, grams);
+    const cartItem = {
+      ...product,
+      cartQty: 1,
+      weightGrams: grams,
+      salePrice: price,          // السعر المحسوب للكمية المطلوبة
+      unit: "غ",
+      isWeightBased: true,
+    };
+    setCart((old) => {
+      const exists = old.find((i) => i.id === product.id);
+      return exists
+        ? old.map((i) => i.id === product.id ? cartItem : i)
+        : [cartItem, ...old];
+    });
   }
   function qty(id, delta) {
-    setCart((old) => old.map((i) => i.id === id ? { ...i, cartQty: Math.max(1, Math.min(i.quantity, i.cartQty + delta)) } : i));
+    setCart((old) => old.map((i) => {
+      if (i.id !== id || i.isWeightBased) return i; // الوزني لا يتغير بالزر
+      return { ...i, cartQty: Math.max(1, Math.min(i.quantity, i.cartQty + delta)) };
+    }));
   }
   async function finish() {
     try {
@@ -1208,20 +1298,45 @@ function POS({ user }) {
           <span>حجم الورق:</span>
           <select className="rounded-xl border px-3 py-1.5 text-sm" value={paperSize} onChange={(e) => setPaperSize(e.target.value)}>
             <option value="A4">A4 عادي</option>
+            <option value="110">110mm حراري</option>
             <option value="80">80mm حراري</option>
             <option value="58">58mm حراري</option>
+            <option value="53">53mm — Phomemo</option>
           </select>
         </label>
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input type="checkbox" checked={autoPrint} onChange={(e) => setAutoPrint(e.target.checked)} className="h-4 w-4 accent-[#0d6a42]" />
           طباعة تلقائية بعد البيع
         </label>
+        <Link to="/print-settings" className="flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold text-[#0d6a42] hover:bg-green-50">
+          <Settings size={13} /> إعدادات متقدمة
+        </Link>
         <span className="mr-auto rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-[#0d6a42]">💡 الماسح الضوئي يعمل في حقل QR تلقائياً</span>
       </div>
       <div className="grid gap-6 xl:grid-cols-[.8fr_1.2fr]">
         <section className="card order-2 p-4 xl:order-1">
           <div className="mb-4 flex items-center justify-between"><h2 className="text-2xl font-black">سلة المشتريات</h2><button onClick={() => setCart([])} className="grid h-11 w-11 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 /></button></div>
-          <div className="space-y-3">{cart.map((item) => <div key={item.id} className="soft-card flex items-center gap-3 p-3"><ProductImage p={item} /><div className="flex-1"><b>{item.name}</b><p className="text-gray-500">{money(item.salePrice)}</p></div><div className="flex items-center rounded-xl bg-green-50"><button onClick={() => qty(item.id, -1)} className="px-3 py-2">-</button><b className="px-3">{item.cartQty}</b><button onClick={() => qty(item.id, 1)} className="px-3 py-2">+</button></div></div>)}</div>
+          <div className="space-y-3">{cart.map((item) => (
+            <div key={item.id} className="soft-card flex items-center gap-3 p-3">
+              <ProductImage p={item} />
+              <div className="flex-1">
+                <b>{item.name}</b>
+                {item.isWeightBased
+                  ? <p className="text-gray-500">{item.weightGrams}غ × <span className="font-bold text-[#0d6a42]">{money(item.salePrice)}</span></p>
+                  : <p className="text-gray-500">{money(item.salePrice)}</p>
+                }
+              </div>
+              {item.isWeightBased
+                ? <button onClick={() => setWeightModal(item)} className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">✏️ {item.weightGrams}غ</button>
+                : <div className="flex items-center rounded-xl bg-green-50">
+                    <button onClick={() => qty(item.id, -1)} className="px-3 py-2">-</button>
+                    <b className="px-3">{item.cartQty}</b>
+                    <button onClick={() => qty(item.id, 1)} className="px-3 py-2">+</button>
+                  </div>
+              }
+              <button onClick={() => setCart((old) => old.filter(i => i.id !== item.id))} className="grid h-8 w-8 place-items-center rounded-xl bg-red-50 text-red-500"><X size={15} /></button>
+            </div>
+          ))}</div>
           <label className="mt-4 block"><span className="mb-2 block font-bold">الخصم</span><input className="input" type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label>
           <div className="my-4 rounded-3xl bg-white p-4"><Row label="المجموع الفرعي" value={money(subtotal)} /><Row label="الخصم" value={money(discount)} good /><Row label="الإجمالي" value={money(total)} strong /></div>
           <h3 className="mb-3 text-xl font-black">طريقة الدفع</h3>
@@ -1237,11 +1352,87 @@ function POS({ user }) {
             <button className="btn-primary h-12 font-black">إضافة</button>
           </form>
           <h2 className="mb-4 text-2xl font-black">منتجات شائعة</h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{filtered.map((p) => <button key={p.id} onClick={() => add(p)} className="soft-card relative p-4 text-center"><ProductImage p={p} className="mx-auto h-24 w-24" /><b className="mt-3 block">{p.name}</b><p className="text-gray-500">{p.unit}</p><p className="mt-2 text-xl font-black">{money(p.salePrice)}</p><span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-green-50 text-[#0d6a42]">+</span></button>)}</div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{filtered.map((p) => (
+            <button key={p.id} onClick={() => add(p)} className="soft-card relative p-4 text-center">
+              <ProductImage p={p} className="mx-auto h-24 w-24" />
+              <b className="mt-3 block">{p.name}</b>
+              <p className="text-gray-500">{p.isWeightBased ? formatWeight(p.stockInGrams || 0) : p.unit}</p>
+              <p className="mt-2 text-xl font-black">
+                {money(p.salePrice)}{p.isWeightBased && <span className="text-xs font-normal text-gray-400">/كغ</span>}
+              </p>
+              {p.isWeightBased && <span className="absolute top-2 left-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">⚖️</span>}
+              <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-green-50 text-[#0d6a42]">+</span>
+            </button>
+          ))}</div>
         </section>
       </div>
       {scanner && <QrScannerModal title="بيع منتج عبر QR" description="امسح QR المنتج ليُضاف مباشرة إلى سلة البيع، ثم يتم إنقاصه من المخزون عند إتمام البيع." close={() => setScanner(false)} onScan={handleSaleQr} />}
+      {weightModal && (
+        <WeightInputModal
+          product={weightModal}
+          onConfirm={(grams) => addWeightItem(weightModal, grams)}
+          onClose={() => setWeightModal(null)}
+        />
+      )}
     </Page>
+  );
+}
+
+/* ─── مودال إدخال الوزن (للمنتجات الوزنية) ─── */
+function WeightInputModal({ product, onConfirm, onClose }) {
+  const [grams, setGrams] = useState("");
+  const maxGrams = Number(product.stockInGrams || 0);
+  const price = calcWeightPrice(product.salePrice, Number(grams));
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function confirm() {
+    const g = Number(grams);
+    if (!g || g <= 0) return alert("أدخل كمية بالغرام");
+    if (g > maxGrams) return alert(`الكمية غير كافية. المتوفر: ${formatWeight(maxGrams)}`);
+    onConfirm(g);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="card w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-black">⚖️ تحديد الوزن</h2>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-xl bg-gray-100"><X size={16} /></button>
+        </div>
+        <div className="mb-4 rounded-2xl bg-amber-50 p-4">
+          <b className="block text-lg">{product.name}</b>
+          <p className="text-sm text-gray-600">المتوفر: <b className="text-amber-700">{formatWeight(maxGrams)}</b></p>
+          <p className="text-sm text-gray-600">سعر الكغ: <b>{money(product.salePrice)}</b></p>
+        </div>
+        <label className="mb-3 block">
+          <span className="mb-1 block font-bold">الكمية بالغرام *</span>
+          <input
+            ref={inputRef}
+            className="input text-xl font-black ltr text-center"
+            type="number"
+            placeholder="مثال: 250"
+            value={grams}
+            onChange={(e) => setGrams(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirm()}
+            min="1"
+            max={maxGrams}
+          />
+        </label>
+        {Number(grams) > 0 && (
+          <div className="mb-4 rounded-2xl bg-green-50 p-3 text-center">
+            <p className="text-sm text-gray-600">السعر الإجمالي</p>
+            <b className="text-2xl text-[#0d6a42]">{money(price)}</b>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={confirm} className="btn-primary h-12 font-black">إضافة للسلة</button>
+          <button onClick={onClose} className="btn-ghost h-12 font-bold">إلغاء</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1252,7 +1443,8 @@ function Row({ label, value, strong, good }) {
 function Invoice() {
   const invoice = JSON.parse(sessionStorage.getItem("lastInvoice") || "null");
   const paperSize = invoice?.paperSize || "A4";
-  const isNarrow = paperSize === "58" || paperSize === "80";
+  const isNarrow = paperSize === "53" || paperSize === "58" || paperSize === "80" || paperSize === "110";
+  const NARROW_CLASSES = ["receipt-53", "receipt-58", "receipt-80", "receipt-110"];
 
   // طباعة تلقائية
   useEffect(() => {
@@ -1261,16 +1453,17 @@ function Invoice() {
       if (isNarrow) document.body.classList.add(`receipt-${paperSize}`);
       const timer = setTimeout(() => {
         window.print();
-        document.body.classList.remove(`receipt-58`, `receipt-80`);
+        NARROW_CLASSES.forEach((c) => document.body.classList.remove(c));
       }, 350);
       return () => clearTimeout(timer);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handlePrint() {
     if (isNarrow) document.body.classList.add(`receipt-${paperSize}`);
     window.print();
-    document.body.classList.remove(`receipt-58`, `receipt-80`);
+    NARROW_CLASSES.forEach((c) => document.body.classList.remove(c));
   }
 
   if (!invoice) return <Page title="فاتورة البيع"><div className="card p-8 text-center">لا توجد فاتورة حديثة.</div></Page>;
@@ -1332,8 +1525,13 @@ function Invoice() {
               {invoice.items.map((i, idx) => (
                 <tr key={idx} className="table-row">
                   <td className="p-3">{idx + 1}</td>
-                  <td className="p-3">{i.name}</td>
-                  <td className="p-3">{i.quantity} {i.unit}</td>
+                  <td className="p-3">
+                    {i.name}
+                    {i.isWeightBased && <span className="mr-1 text-xs text-amber-600">⚖️</span>}
+                  </td>
+                  <td className="p-3">
+                    {i.isWeightBased ? `${i.quantity}غ` : `${i.quantity} ${i.unit}`}
+                  </td>
                   <td className="p-3">{money(i.salePrice)}</td>
                   <td className="p-3 font-bold">{money(i.total)}</td>
                 </tr>

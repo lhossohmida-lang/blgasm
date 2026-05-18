@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { uploadProductImage } from "./imageUploadService";
+import { kgToGrams } from "./weightUtils";
 import {
   hardDeleteLocalRecord,
   loadCollectionFromLocal,
@@ -59,6 +60,7 @@ export async function saveProduct(values, file, id) {
     }
   }
 
+  const isWeightBased = Boolean(values.isWeightBased);
   const payload = {
     id: docId,
     name: String(values.name || "").trim(),
@@ -68,10 +70,13 @@ export async function saveProduct(values, file, id) {
     purchasePrice: Number(values.purchasePrice || 0),
     salePrice: Number(values.salePrice || 0),
     quantity: Number(values.quantity || 0),
-    unit: values.unit || "قطعة",
+    unit: isWeightBased ? "كغ" : (values.unit || "قطعة"),
     minimumStock: Number(values.minimumStock || 0),
     expiryDate: values.expiryDate || null,
     supplier: values.supplier || "",
+    isWeightBased,
+    // للمنتجات الوزنية: تحويل الكمية (بالكغ) إلى غرام للتخزين الداخلي
+    stockInGrams: isWeightBased ? kgToGrams(values.quantity) : null,
     imageUrl,
     imagePending,
     updatedAt: now,
@@ -266,6 +271,7 @@ export async function createSale({ cart, discount, paymentMethod, customer, cash
   if (!cart.length) throw new Error("السلة فارغة");
 
   const invoiceNumber = String(Date.now()).slice(-6);
+  // للمنتجات الوزنية cartQty=1 وsalePrice=السعر المحسوب، فالضرب صحيح للجميع
   const subtotal = cart.reduce((sum, item) => sum + item.salePrice * item.cartQty, 0);
   const total = Math.max(0, subtotal - Number(discount || 0));
   const now = new Date().toISOString();
@@ -281,11 +287,13 @@ export async function createSale({ cart, discount, paymentMethod, customer, cash
       name: item.name,
       barcode: item.barcode || "",
       qrCode: item.qrCode || item.barcode || "",
-      quantity: item.cartQty,
+      quantity: item.isWeightBased ? item.weightGrams : item.cartQty,
       unit: item.unit,
       purchasePrice: item.purchasePrice,
       salePrice: item.salePrice,
       total: item.salePrice * item.cartQty,
+      isWeightBased: item.isWeightBased || false,
+      weightGrams: item.weightGrams || null,
     })),
     subtotal,
     discount: Number(discount || 0),
@@ -307,12 +315,24 @@ export async function createSale({ cart, discount, paymentMethod, customer, cash
   for (const item of cart) {
     const local = await offlineDb.products.get(item.id);
     if (local) {
-      await offlineDb.products.update(item.id, {
-        quantity: Math.max(0, (local.quantity || 0) - item.cartQty),
-        updatedAt: now,
-        syncStatus: "pending",
-        synced: false,
-      });
+      if (item.isWeightBased) {
+        // خصم الغرامات من stockInGrams
+        const newGrams = Math.max(0, (local.stockInGrams || 0) - (item.weightGrams || 0));
+        await offlineDb.products.update(item.id, {
+          stockInGrams: newGrams,
+          quantity: Math.round(newGrams / 1000 * 100) / 100, // تحديث الكغ تقريباً
+          updatedAt: now,
+          syncStatus: "pending",
+          synced: false,
+        });
+      } else {
+        await offlineDb.products.update(item.id, {
+          quantity: Math.max(0, (local.quantity || 0) - item.cartQty),
+          updatedAt: now,
+          syncStatus: "pending",
+          synced: false,
+        });
+      }
     }
   }
 
@@ -335,14 +355,26 @@ export async function createSale({ cart, discount, paymentMethod, customer, cash
     try {
       const saleRef = doc(db, "sales", saleId);
       await runTransaction(db, async (transaction) => {
-        // تحقق من الكميات في Firestore
+        // تحقق من الكميات في Firestore وخصمها
         for (const item of cart) {
           const productRef = doc(db, "products", item.id);
           const snap = await transaction.get(productRef);
           if (!snap.exists()) throw new Error(`المنتج غير موجود: ${item.name}`);
-          const current = snap.data().quantity || 0;
-          if (current < item.cartQty) throw new Error(`الكمية غير متوفرة: ${item.name}`);
-          transaction.update(productRef, { quantity: current - item.cartQty, updatedAt: serverTimestamp() });
+          if (item.isWeightBased) {
+            const currentGrams = snap.data().stockInGrams || 0;
+            const needed = item.weightGrams || 0;
+            if (currentGrams < needed)
+              throw new Error(`الكمية غير كافية: ${item.name} (متوفر: ${currentGrams}غ، مطلوب: ${needed}غ)`);
+            transaction.update(productRef, {
+              stockInGrams: currentGrams - needed,
+              quantity: Math.round((currentGrams - needed) / 1000 * 100) / 100,
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            const current = snap.data().quantity || 0;
+            if (current < item.cartQty) throw new Error(`الكمية غير متوفرة: ${item.name}`);
+            transaction.update(productRef, { quantity: current - item.cartQty, updatedAt: serverTimestamp() });
+          }
         }
 
         const fsPayload = toFirestorePayload(saleData);
