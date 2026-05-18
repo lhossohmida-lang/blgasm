@@ -37,57 +37,52 @@ button { cursor: pointer; }
 }
 
 @media print {
+  /* ── إخفاء واجهة التطبيق عند أي طباعة ── */
   .no-print, .bottom-nav, .desktop-sidebar, .hero-header { display: none !important; }
   .app-shell { padding: 0 !important; background: white; }
-  .card { box-shadow: none; border: none; }
+  .card { box-shadow: none !important; border: none !important; }
 
-  /* ─── أحجام الورق الحراري (Phomemo + طابعات أخرى) ─── */
-  body.receipt-53 { width: 53mm !important; }   /* Phomemo M02/T02 */
-  body.receipt-58 { width: 58mm !important; }   /* طابعات 58mm  */
-  body.receipt-80 { width: 80mm !important; }   /* طابعات 80mm  */
-  body.receipt-110 { width: 110mm !important; } /* طابعات 110mm */
+  /* ══════════════════════════════════════
+     Phomemo M110 — نظام الطباعة الحصري
+  ══════════════════════════════════════ */
 
-  body.receipt-53 .receipt-page,
-  body.receipt-58 .receipt-page,
-  body.receipt-80 .receipt-page,
-  body.receipt-110 .receipt-page {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-    font-size: 11px !important;
-  }
+  /* الـ @page الافتراضي للفاتورة العادية (A4) */
+  @page { margin: 12mm; }
 
-  /* Phomemo 53mm — خط أصغر بسبب ضيق الورق */
-  body.receipt-53 .receipt-page { font-size: 9px !important; }
+  /* منطقة M110 — يتحكم بها JavaScript ديناميكيًا */
+  /* عند الطباعة، يُضخّ style بـ @page { size: Xmm Ymm; margin: 0 } */
+  /* وتُعرض منطقة m110-label-print-area أو m110-receipt-print-area فقط */
 
+  /* ── إيصال الشاشة (للطباعة العادية بـ A4 من صفحة الفاتورة) ── */
   .receipt-page * { color: #000 !important; background: transparent !important; }
-  .receipt-page .receipt-logo { display: none; }
+  .receipt-page .receipt-logo { display: flex !important; }
   .receipt-page .receipt-divider { border-top: 1px dashed #000; margin: 4px 0; }
-  .receipt-page table { width: 100%; font-size: 10px; }
-  .receipt-page th, .receipt-page td { padding: 2px 3px !important; }
-  .receipt-page .receipt-total { font-size: 13px; font-weight: 900; }
-  .receipt-page .receipt-footer { text-align: center; font-size: 9px; margin-top: 6px; }
+  .receipt-page table { width: 100%; font-size: 11px; }
+  .receipt-page th, .receipt-page td { padding: 3px 4px !important; }
+  .receipt-page .receipt-total { font-size: 14px; font-weight: 900; }
+  .receipt-page .receipt-footer { text-align: center; font-size: 10px; margin-top: 8px; }
 
-  /* بطاقة المنتج (Product Label) */
-  .product-label { page-break-inside: avoid; }
-
-  /* إخفاء كل شيء ما عدا الإيصال عند الطباعة الحرارية */
-  body.receipt-53 *:not(.receipt-page):not(.receipt-page *),
-  body.receipt-58 *:not(.receipt-page):not(.receipt-page *),
-  body.receipt-80 *:not(.receipt-page):not(.receipt-page *),
-  body.receipt-110 *:not(.receipt-page):not(.receipt-page *) {
-    display: none !important;
-  }
-  body.receipt-53 .receipt-page,
-  body.receipt-58 .receipt-page,
-  body.receipt-80 .receipt-page,
-  body.receipt-110 .receipt-page {
-    display: block !important;
+  /* ── ملصقات M110 — تُعزل بـ JS ── */
+  /* القواعد أدناه تنطبق على المحتوى داخل منطقة الطباعة المُعزلة */
+  #m110-label-print-area,
+  #m110-receipt-print-area {
+    font-family: 'Tajawal', 'Cairo', Arial, sans-serif !important;
+    color: #000 !important;
+    background: #fff !important;
+    direction: rtl !important;
   }
 
-  /* @page لكل حجم ورق حراري */
-  @page { margin: 0; }
+  #m110-label-print-area *,
+  #m110-receipt-print-area * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* فواصل الصفحات بين النسخ */
+  #m110-label-print-area > div { page-break-after: always; }
+  #m110-label-print-area > div:last-child { page-break-after: avoid; }
 }

@@ -92,7 +92,12 @@ import { calcWeightPrice, formatStockDisplay, formatWeight } from "./lib/weightU
 import Assistant from "./Assistant";
 import OnlineStore from "./OnlineStore";
 import { AdminOnlineStore } from "./AdminOnlineStore";
-import { PrintLabelButton, PrintSettingsPage } from "./PhomemoPrint";
+import {
+  M110SettingsPage,
+  PrintM110LabelBtn,
+  PrintM110ReceiptBtn,
+  PrintWeightSaleLabelBtn,
+} from "./PhomemoPrint";
 
 /* ─── نغمة المسح ─── */
 function beep() {
@@ -250,7 +255,7 @@ function ProtectedApp({ user }) {
         <Route path="/customers/:id" element={<CustomerAccount />} />
         <Route path="/expiry-alerts" element={<ExpiryAlerts />} />
         <Route path="/online-store" element={<Page title="المتجر الإلكتروني"><AdminOnlineStore /></Page>} />
-        <Route path="/print-settings" element={<Page title="إعدادات الطباعة الحرارية" back><PrintSettingsPage /></Page>} />
+        <Route path="/print-settings" element={<Page title="إعدادات طابعة Phomemo M110" back><M110SettingsPage /></Page>} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -1043,7 +1048,7 @@ function ProductRow({ product }) {
       </td>
       <td className="p-4"><div className="flex gap-2">
         <Link to={`/products/${product.id}/edit`} className="grid h-10 w-10 place-items-center rounded-xl bg-green-50 text-[#0d6a42]"><Edit3 size={18} /></Link>
-        <PrintLabelButton product={product} />
+        <PrintM110LabelBtn product={product} />
         <button onClick={() => confirm("حذف المنتج؟") && deleteProduct(product.id)} className="grid h-10 w-10 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 size={18} /></button>
       </div></td>
     </tr>
@@ -1177,7 +1182,15 @@ function ProductForm() {
               )}
             </div>
           </div>
-          <div className="mt-6 grid gap-3 md:grid-cols-2"><button className="btn-primary h-14 font-black">{saving ? "جاري الحفظ..." : "حفظ المنتج"}</button><button type="button" onClick={() => navigate("/inventory")} className="btn-ghost h-14 font-black text-orange-600">إلغاء</button></div>
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
+            <button className="btn-primary h-14 font-black">{saving ? "جاري الحفظ..." : "حفظ المنتج"}</button>
+            <button type="button" onClick={() => navigate("/inventory")} className="btn-ghost h-14 font-black text-orange-600">إلغاء</button>
+          </div>
+          {id && editing && (
+            <div className="mt-3">
+              <PrintM110LabelBtn product={editing} variant="full" />
+            </div>
+          )}
         </form>
         <aside className="card p-6">
           <h2 className="mb-5 text-center text-2xl font-black">معاينة المنتج</h2>
@@ -1206,7 +1219,7 @@ function POS({ user }) {
   const navigate = useNavigate();
   const { data: products } = useCollection("products");
   const { data: customers } = useCollection("customers");
-  const { paperSize, setPaperSize, autoPrint, setAutoPrint } = usePrintSettings();
+  const { autoPrint, setAutoPrint } = usePrintSettings();
   const [cart, setCart] = useState([]);
   const [search, setSearch] = useState("");
   const [saleQrInput, setSaleQrInput] = useState("");
@@ -1259,9 +1272,9 @@ function POS({ user }) {
   async function finish() {
     try {
       const sale = await createSale({ cart, discount, paymentMethod, customer, cashierId: user.uid });
-      sessionStorage.setItem("lastInvoice", JSON.stringify({ ...sale, cashierName: user.email, paperSize }));
+      sessionStorage.setItem("lastInvoice", JSON.stringify({ ...sale, cashierName: user.email }));
       if (autoPrint) {
-        sessionStorage.setItem("triggerPrint", "1");
+        sessionStorage.setItem("triggerPrintM110", "1");
       }
       navigate("/invoice");
     } catch (e) { alert(e.message); }
@@ -1290,26 +1303,15 @@ function POS({ user }) {
 
   return (
     <Page title="نقطة البيع">
-      {/* ─── شريط إعدادات الطباعة ─── */}
+      {/* ─── شريط Phomemo M110 ─── */}
       <div className="no-print mb-4 flex flex-wrap items-center gap-3 rounded-2xl border bg-white p-3">
-        <Printer size={18} className="text-[#0d6a42]" />
-        <b className="text-sm">إعدادات الطباعة:</b>
-        <label className="flex items-center gap-2 text-sm">
-          <span>حجم الورق:</span>
-          <select className="rounded-xl border px-3 py-1.5 text-sm" value={paperSize} onChange={(e) => setPaperSize(e.target.value)}>
-            <option value="A4">A4 عادي</option>
-            <option value="110">110mm حراري</option>
-            <option value="80">80mm حراري</option>
-            <option value="58">58mm حراري</option>
-            <option value="53">53mm — Phomemo</option>
-          </select>
-        </label>
+        <span className="flex items-center gap-2 rounded-xl bg-black px-3 py-1.5 text-xs font-bold text-white">🖨️ Phomemo M110</span>
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input type="checkbox" checked={autoPrint} onChange={(e) => setAutoPrint(e.target.checked)} className="h-4 w-4 accent-[#0d6a42]" />
-          طباعة تلقائية بعد البيع
+          طباعة إيصال تلقائي بعد البيع
         </label>
         <Link to="/print-settings" className="flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold text-[#0d6a42] hover:bg-green-50">
-          <Settings size={13} /> إعدادات متقدمة
+          <Settings size={13} /> إعدادات M110
         </Link>
         <span className="mr-auto rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-[#0d6a42]">💡 الماسح الضوئي يعمل في حقل QR تلقائياً</span>
       </div>
@@ -1327,7 +1329,10 @@ function POS({ user }) {
                 }
               </div>
               {item.isWeightBased
-                ? <button onClick={() => setWeightModal(item)} className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">✏️ {item.weightGrams}غ</button>
+                ? <div className="flex items-center gap-2">
+                    <button onClick={() => setWeightModal(item)} className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">✏️ {item.weightGrams}غ</button>
+                    <PrintWeightSaleLabelBtn product={item} grams={item.weightGrams} totalPrice={item.salePrice} />
+                  </div>
                 : <div className="flex items-center rounded-xl bg-green-50">
                     <button onClick={() => qty(item.id, -1)} className="px-3 py-2">-</button>
                     <b className="px-3">{item.cartQty}</b>
@@ -1343,7 +1348,6 @@ function POS({ user }) {
           <div className="grid grid-cols-2 gap-3"><button onClick={() => setPaymentMethod("cash")} className={`btn-ghost h-14 ${paymentMethod === "cash" ? "border-[#0d6a42] text-[#0d6a42]" : ""}`}><Banknote className="inline" /> نقدًا</button><button onClick={() => setPaymentMethod("credit")} className={`btn-ghost h-14 ${paymentMethod === "credit" ? "border-[#0d6a42] text-[#0d6a42]" : ""}`}><CreditCard className="inline" /> كريديت</button></div>
           {paymentMethod === "credit" && <select className="input mt-4" value={customerId} onChange={(e) => setCustomerId(e.target.value)}><option value="">اختر الزبون</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name} - دين: {money(c.totalDebt)}</option>)}</select>}
           <button onClick={finish} className="btn-primary mt-5 h-16 w-full text-xl font-black"><CreditCard className="inline" /> إتمام البيع</button>
-          <button onClick={() => window.print()} className="btn-ghost mt-3 h-14 w-full font-black text-[#0d6a42]"><Printer className="inline" /> طباعة الفاتورة</button>
         </section>
         <section className="card order-1 p-5 xl:order-2">
           <div className="mb-6 flex gap-2"><button onClick={() => setScanner(true)} className="btn-ghost grid h-14 w-16 place-items-center text-[#0d6a42]" title="مسح QR للبيع"><ScanBarcode /></button><input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث عن منتج أو امسح QR..." /></div>
@@ -1442,29 +1446,15 @@ function Row({ label, value, strong, good }) {
 
 function Invoice() {
   const invoice = JSON.parse(sessionStorage.getItem("lastInvoice") || "null");
-  const paperSize = invoice?.paperSize || "A4";
-  const isNarrow = paperSize === "53" || paperSize === "58" || paperSize === "80" || paperSize === "110";
-  const NARROW_CLASSES = ["receipt-53", "receipt-58", "receipt-80", "receipt-110"];
+  const [autoM110, setAutoM110] = useState(false);
 
-  // طباعة تلقائية
+  // طباعة تلقائية M110 بعد البيع
   useEffect(() => {
-    if (sessionStorage.getItem("triggerPrint") === "1") {
-      sessionStorage.removeItem("triggerPrint");
-      if (isNarrow) document.body.classList.add(`receipt-${paperSize}`);
-      const timer = setTimeout(() => {
-        window.print();
-        NARROW_CLASSES.forEach((c) => document.body.classList.remove(c));
-      }, 350);
-      return () => clearTimeout(timer);
+    if (sessionStorage.getItem("triggerPrintM110") === "1") {
+      sessionStorage.removeItem("triggerPrintM110");
+      setAutoM110(true); // يُظهر مودال الإيصال تلقائياً
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function handlePrint() {
-    if (isNarrow) document.body.classList.add(`receipt-${paperSize}`);
-    window.print();
-    NARROW_CLASSES.forEach((c) => document.body.classList.remove(c));
-  }
 
   if (!invoice) return <Page title="فاتورة البيع"><div className="card p-8 text-center">لا توجد فاتورة حديثة.</div></Page>;
 
@@ -1493,14 +1483,7 @@ function Invoice() {
           </div>
         </div>
 
-        {/* رأس مختصر للطباعة الحرارية */}
-        <div className="hidden text-center" style={{display: isNarrow ? undefined : "none"}}>
-          <b className="block text-base">متجر المواد الغذائية</b>
-          <p className="text-xs">أفضل جودة.. أسعار منافسة</p>
-          <div className="receipt-divider" />
-          <p className="text-xs">رقم الفاتورة: <b>#{invoice.invoiceNumber}</b></p>
-          <p className="text-xs">{dateTime(invoice.createdAt)}</p>
-        </div>
+        {/* رأس ثانوي (محجوب في الشاشة — الإيصال M110 يُستخدم بدلًا من هذا) */}
 
         <div className="receipt-divider my-4 border-t border-dashed border-gray-300" />
 
@@ -1557,9 +1540,7 @@ function Invoice() {
 
         {/* أزرار الإجراءات */}
         <div className="no-print mt-5 grid gap-3 md:grid-cols-3">
-          <button onClick={handlePrint} className="btn-primary h-14 font-black">
-            <Printer className="inline" /> طباعة {isNarrow ? `(${paperSize}mm)` : ""}
-          </button>
+          <PrintM110ReceiptBtn invoice={invoice} />
           <button onClick={() => navigator.share?.({ title: "فاتورة", text: `فاتورة #${invoice.invoiceNumber} - الإجمالي: ${money(invoice.total)}` })} className="btn-ghost h-14 font-black text-[#0d6a42]">
             <Share2 className="inline" /> مشاركة
           </button>
@@ -1567,6 +1548,8 @@ function Invoice() {
             <ArrowLeft className="inline" /> رجوع
           </button>
         </div>
+        {/* طباعة تلقائية M110 بعد البيع */}
+        {autoM110 && <PrintM110ReceiptBtn invoice={invoice} />}
       </section>
     </Page>
   );
