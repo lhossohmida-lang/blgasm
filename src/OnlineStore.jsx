@@ -63,28 +63,50 @@ export default function OnlineStore() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
 
-  // جلب الإعدادات
+  // جلب الإعدادات — useStoreSettings هي دالة subscribe وليست React hook
   useEffect(() => {
-    const unsub = useStoreSettings(setStoreSettings);
+    const unsub = useStoreSettings((s) => setStoreSettings(s));
     return unsub;
   }, []);
 
-  // جلب المنتجات
+  // جلب المنتجات — مع معالجة الخطأ لضمان إيقاف حالة التحميل دائماً
   useEffect(() => {
-    const unsub = subscribeOnlineProducts((data) => {
-      setProducts(data);
-      setLoading(false);
-    });
+    setLoading(true);
+    setFetchError(null);
+
+    const unsub = subscribeOnlineProducts(
+      (data) => {
+        setProducts(data);
+        setLoading(false);
+        setFetchError(null);
+      },
+      (err) => {
+        // فشل الاستعلام: أوقف التحميل وأظهر رسالة خطأ
+        setFetchError(err.message || "خطأ في جلب المنتجات");
+        setLoading(false);
+      }
+    );
+
     return unsub;
   }, []);
+
+  // ── مساعدة: هل يوجد مخزون كافٍ؟
+  function hasStock(product, currentQty = 0) {
+    if (product.isWeightBased) {
+      // للمنتجات الوزنية نسمح دائماً بالإضافة (الكمية تُدخَل لاحقاً)
+      return Number(product.stockInGrams || 0) > 0;
+    }
+    return Number(product.quantity || 0) > currentQty;
+  }
 
   // عمليات السلة
   function addToCart(product) {
     setCart((prev) => {
       const exists = prev.find((i) => i.id === product.id);
       if (exists) {
-        if (exists.qty >= Number(product.quantity || 0)) return prev; // لا يتجاوز المخزون
+        if (!hasStock(product, exists.qty)) return prev;
         return prev.map((i) => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
       }
       return [...prev, { ...product, qty: 1 }];
@@ -120,7 +142,12 @@ export default function OnlineStore() {
     return list;
   }, [products, category, search, sort]);
 
-  const featured = products.filter((p) => p.featuredOnline && Number(p.quantity) > 0);
+  const featured = products.filter((p) => {
+    const inStock = p.isWeightBased
+      ? Number(p.stockInGrams || 0) > 0
+      : Number(p.quantity || 0) > 0;
+    return p.featuredOnline && inStock;
+  });
 
   const settings = storeSettings || {
     storeName: "متجر المواد الغذائية",
@@ -197,8 +224,10 @@ export default function OnlineStore() {
         {/* شبكة المنتجات */}
         {loading ? (
           <ProductSkeleton />
+        ) : fetchError ? (
+          <ErrorState message={fetchError} onRetry={() => window.location.reload()} />
         ) : filtered.length === 0 ? (
-          <EmptyState search={search} />
+          <EmptyState search={search} category={category} totalProducts={products.length} />
         ) : (
           <>
             <div className="mb-4 flex items-center justify-between">
@@ -436,8 +465,20 @@ function FeaturedSection({ products, onAdd, cart, onQty }) {
 // بطاقة منتج
 // ──────────────────────────────────────────────
 function ProductCard({ product, onAdd, cartQty, onQty }) {
-  const { url, type } = getBestProductImage(product);
-  const available = Number(product.quantity) > 0;
+  const [imgErr, setImgErr] = useState(false);
+
+  // أولوية الصورة: imageUrl → autoImageUrl → placeholder داخلي
+  const imgSrc = !imgErr
+    ? (product.imageUrl || product.autoImageUrl || null)
+    : null;
+
+  // تحقق من المخزون بشكل صحيح للمنتجات الوزنية والعادية
+  const available = product.isWeightBased
+    ? Number(product.stockInGrams || 0) > 0
+    : Number(product.quantity || 0) > 0;
+
+  // حد الكمية في السلة
+  const maxQty = product.isWeightBased ? 99 : Number(product.quantity || 0);
 
   return (
     <div className={`group relative overflow-hidden rounded-3xl border bg-white shadow-sm transition-all hover:shadow-md ${!available ? "opacity-60" : ""}`}>
@@ -448,18 +489,20 @@ function ProductCard({ product, onAdd, cartQty, onQty }) {
             <Star size={9} className="inline" fill="white" /> مميز
           </span>
         )}
-        {type === "auto" && !product.imageApproved && (
-          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-600">تلقائية</span>
+        {product.isWeightBased && (
+          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-600">⚖️ وزني</span>
         )}
       </div>
 
       {/* صورة المنتج */}
       <div className="relative h-36 overflow-hidden bg-gray-50 md:h-44">
-        {url ? (
+        {imgSrc ? (
           <img
-            src={url}
+            src={imgSrc}
             alt={product.name}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgErr(true)}
+            loading="lazy"
           />
         ) : (
           <div className="grid h-full place-items-center text-gray-200">
@@ -480,19 +523,22 @@ function ProductCard({ product, onAdd, cartQty, onQty }) {
           <p className="mt-0.5 line-clamp-1 text-xs text-gray-400">{product.onlineDescription}</p>
         )}
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-base font-black text-[#0d6a42]">{money(product.salePrice)}</span>
+          <span className="text-base font-black text-[#0d6a42]">
+            {money(product.salePrice)}
+            {product.isWeightBased && <span className="text-xs font-normal text-gray-400">/كغ</span>}
+          </span>
           <span className="text-xs text-gray-400">{product.unit}</span>
         </div>
 
         {available ? (
           cartQty > 0 ? (
-            <div className="mt-2 flex items-center justify-between rounded-2xl bg-green-50 border border-green-100">
-              <button onClick={() => onQty(-1)} className="px-3 py-2 text-lg font-black text-[#0d6a42] hover:bg-green-100 rounded-r-2xl">-</button>
+            <div className="mt-2 flex items-center justify-between rounded-2xl border border-green-100 bg-green-50">
+              <button onClick={() => onQty(-1)} className="rounded-r-2xl px-3 py-2 text-lg font-black text-[#0d6a42] hover:bg-green-100">-</button>
               <span className="font-black text-[#063f2b]">{cartQty}</span>
               <button
-                onClick={() => { if (cartQty < Number(product.quantity)) onQty(1); }}
-                disabled={cartQty >= Number(product.quantity)}
-                className="px-3 py-2 text-lg font-black text-[#0d6a42] hover:bg-green-100 rounded-l-2xl disabled:opacity-40"
+                onClick={() => { if (cartQty < maxQty) onQty(1); }}
+                disabled={cartQty >= maxQty}
+                className="rounded-l-2xl px-3 py-2 text-lg font-black text-[#0d6a42] hover:bg-green-100 disabled:opacity-40"
               >+</button>
             </div>
           ) : (
@@ -765,15 +811,49 @@ function StoreClosed({ settings }) {
 }
 
 // ──────────────────────────────────────────────
+// خطأ في التحميل
+// ──────────────────────────────────────────────
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center" dir="rtl">
+      <div className="mb-4 grid h-20 w-20 place-items-center rounded-full bg-red-50 text-red-400">
+        <AlertTriangle size={40} />
+      </div>
+      <h3 className="text-lg font-black text-gray-700">حدث خطأ أثناء تحميل المنتجات</h3>
+      <p className="mt-2 max-w-xs text-sm text-gray-400">{message || "تأكد من اتصالك بالإنترنت وحاول مجدداً."}</p>
+      <button
+        onClick={onRetry}
+        className="mt-6 rounded-2xl bg-[#063f2b] px-6 py-3 font-black text-white hover:bg-[#0d6a42]"
+      >
+        إعادة المحاولة
+      </button>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
 // لا نتائج
 // ──────────────────────────────────────────────
-function EmptyState({ search }) {
+function EmptyState({ search, category, totalProducts }) {
+  // إذا كان هناك منتجات لكنها مخفية في هذا الفلتر
+  const hasProductsElsewhere = totalProducts > 0;
+
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+    <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400" dir="rtl">
       <Package size={64} strokeWidth={1} />
-      <p className="mt-4 text-lg font-bold">
-        {search ? `لا توجد نتائج لـ "${search}"` : "لا توجد منتجات في هذا القسم"}
+      <p className="mt-4 text-lg font-bold text-gray-600">
+        {search
+          ? `لا توجد نتائج لـ "${search}"`
+          : category !== "الكل" && hasProductsElsewhere
+          ? `لا توجد منتجات في قسم "${category}"`
+          : "لا توجد منتجات متاحة في المتجر حاليًا"}
       </p>
+      {(search || (category !== "الكل" && hasProductsElsewhere)) && (
+        <p className="mt-1 text-sm text-gray-400">جرّب اختيار "الكل" أو بحثاً مختلفاً</p>
+      )}
+      {!search && !hasProductsElsewhere && (
+        <p className="mt-2 text-sm text-gray-400">نحن نعمل على إضافة المنتجات، تفقدنا قريباً!</p>
+      )}
     </div>
   );
 }

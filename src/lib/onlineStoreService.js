@@ -296,13 +296,36 @@ export async function cancelOrder(orderId) {
 // ──────────────────────────────────────────────
 // الاستماع لمنتجات المتجر الإلكتروني (للزبائن)
 // ──────────────────────────────────────────────
-export function subscribeOnlineProducts(callback) {
+/**
+ * يستمع للمنتجات المرئية أونلاين بدون orderBy لتجنب الحاجة إلى
+ * composite index — الترتيب يتم من جهة العميل.
+ * onError: يُستدعى عند فشل الاستعلام (مثلاً: Firestore غير مهيأ أو خطأ في الصلاحيات)
+ */
+export function subscribeOnlineProducts(callback, onError) {
+  // بدون orderBy → لا يحتاج composite index
   const q = query(
     collection(db, "products"),
-    where("isOnlineVisible", "==", true),
-    orderBy("onlineSortOrder", "asc")
+    where("isOnlineVisible", "==", true)
   );
-  return onSnapshot(q, (snap) =>
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // الترتيب من جهة العميل بناءً على onlineSortOrder ثم createdAt
+      items.sort((a, b) => {
+        const sa = Number(a.onlineSortOrder ?? 9999);
+        const sb = Number(b.onlineSortOrder ?? 9999);
+        if (sa !== sb) return sa - sb;
+        // fallback: الأحدث أولاً
+        const ta = a.createdAt?.seconds ?? a.createdAt?.toDate?.()?.getTime?.() ?? 0;
+        const tb = b.createdAt?.seconds ?? b.createdAt?.toDate?.()?.getTime?.() ?? 0;
+        return tb - ta;
+      });
+      callback(items);
+    },
+    (err) => {
+      console.error("[subscribeOnlineProducts] Firestore error:", err.code, err.message);
+      if (typeof onError === "function") onError(err);
+    }
   );
 }

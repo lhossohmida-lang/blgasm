@@ -37,7 +37,7 @@ import {
   Clock3,
   Truck,
 } from "lucide-react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import {
   DEFAULT_STORE_SETTINGS,
@@ -136,10 +136,23 @@ function OnlineProductsManager() {
   const [loadingImage, setLoadingImage] = useState(null);
 
   useEffect(() => {
-    const q = query(collection(db, "products"), orderBy("onlineSortOrder", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    // استخدام collection كاملة بدون orderBy لتجنب مشاكل الـ index
+    // الترتيب يتم من جهة العميل
+    const q = query(collection(db, "products"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // ترتيب محلي: onlineSortOrder أولاً ثم الاسم
+        items.sort((a, b) => {
+          const sa = Number(a.onlineSortOrder ?? 9999);
+          const sb = Number(b.onlineSortOrder ?? 9999);
+          return sa !== sb ? sa - sb : (a.name || "").localeCompare(b.name || "", "ar");
+        });
+        setProducts(items);
+      },
+      (err) => console.error("[AdminOnlineStore] products error:", err.message)
+    );
     return unsub;
   }, []);
 
