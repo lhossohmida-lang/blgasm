@@ -35,10 +35,28 @@ export function isStockSufficient(product, requestedGrams) {
   return Number(product.stockInGrams || 0) >= Number(requestedGrams || 0);
 }
 
+/**
+ * عرض كمية المخزون للمنتج المعبّأ (كرتون/علبة...) بجانب الحبات.
+ * مثال: "60 حبة (2 كرتون)" أو "75 حبة (2 كرتون + 15)"
+ * يعيد null إذا لم يكن المنتج معبّأ.
+ */
+export function formatPackDisplay(product) {
+  if (!product.isPacked || !product.packSize || !product.packUnit) return null;
+  const qty = Number(product.quantity || 0);
+  const ps  = Number(product.packSize);
+  if (ps <= 0) return null;
+  const fullPacks = Math.floor(qty / ps);
+  const remainder = qty % ps;
+  const unitLabel = product.unit || "قطعة";
+  if (fullPacks === 0) return `${qty} ${unitLabel}`;
+  if (remainder === 0) return `${qty} ${unitLabel} (${fullPacks} ${product.packUnit})`;
+  return `${qty} ${unitLabel} (${fullPacks} ${product.packUnit} + ${remainder})`;
+}
+
 /** عرض كمية المخزون المناسبة للمنتج */
 export function formatStockDisplay(product) {
-  if (!product.isWeightBased) {
-    return `${product.quantity ?? 0} ${product.unit || "قطعة"}`;
-  }
-  return formatWeight(product.stockInGrams || 0);
+  if (product.isWeightBased) return formatWeight(product.stockInGrams || 0);
+  const packDisplay = formatPackDisplay(product);
+  if (packDisplay) return packDisplay;
+  return `${product.quantity ?? 0} ${product.unit || "قطعة"}`;
 }

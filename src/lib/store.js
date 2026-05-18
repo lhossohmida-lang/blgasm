@@ -28,7 +28,8 @@ import {
 import { addToSyncQueue } from "./syncQueueService";
 
 export const categories = ["مواد أساسية", "مشروبات", "حلويات", "منظفات", "ألبان", "أخرى"];
-export const units = ["قطعة", "كغ", "غرام", "لتر", "علبة", "كرتونة", "كيس"];
+export const units = ["قطعة", "حبة", "كغ", "غرام", "لتر", "علبة", "كرتونة", "كيس"];
+export const packUnits = ["كرتون", "علبة", "صندوق", "كيس", "طرد", "رزمة", "دزينة"];
 
 /** مرجع للمجموعة في Firestore */
 export function collectionRef(name) {
@@ -61,6 +62,8 @@ export async function saveProduct(values, file, id) {
   }
 
   const isWeightBased = Boolean(values.isWeightBased);
+  // المنتجات المعبّأة (كرتون/علبة...) — لا تتعارض مع الوزنية
+  const isPacked = Boolean(values.isPacked) && !isWeightBased;
   const payload = {
     id: docId,
     name: String(values.name || "").trim(),
@@ -77,6 +80,10 @@ export async function saveProduct(values, file, id) {
     isWeightBased,
     // للمنتجات الوزنية: تحويل الكمية (بالكغ) إلى غرام للتخزين الداخلي
     stockInGrams: isWeightBased ? kgToGrams(values.quantity) : null,
+    // للمنتجات المعبّأة: وحدة التعبئة وحجمها
+    isPacked,
+    packUnit: isPacked ? String(values.packUnit || "كرتون").trim() : null,
+    packSize: isPacked ? Math.max(1, Number(values.packSize || 1)) : null,
     imageUrl,
     imagePending,
     updatedAt: now,
@@ -143,9 +150,17 @@ export async function deleteProduct(id) {
   }
 }
 
-/** استلام كمية جديدة عبر QR */
-export async function receiveProductStock({ productId, productName, quantity, note }) {
-  const value = Number(quantity || 0);
+/**
+ * استلام كمية جديدة عبر QR.
+ * يدعم طريقتين:
+ *   - quantity: عدد الحبات/الوحدات مباشرة
+ *   - packs + packSize: عدد الكراتين × حجم الكرتون → يُحوَّل تلقائياً للحبات
+ */
+export async function receiveProductStock({ productId, productName, quantity, packs, packSize, note }) {
+  // إذا أُرسل packs → احسب الحبات، وإلا استخدم quantity مباشرة
+  const value = (packs && packSize)
+    ? Math.round(Number(packs) * Number(packSize))
+    : Number(quantity || 0);
   if (!productId) throw new Error("لم يتم تحديد المنتج");
   if (value <= 0) throw new Error("الكمية غير صحيحة");
 

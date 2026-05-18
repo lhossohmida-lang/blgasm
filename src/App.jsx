@@ -66,6 +66,7 @@ import {
   deleteProduct,
   ensureDemoData,
   fetchCustomerTransactions,
+  packUnits,
   recordPayment,
   receiveProductStock,
   resetData,
@@ -144,12 +145,15 @@ const emptyProduct = {
   purchasePrice: "",
   salePrice: "",
   quantity: "",
-  unit: "قطعة",
+  unit: "حبة",
   minimumStock: "",
   expiryDate: "",
   supplier: "",
   imageUrl: "",
   isWeightBased: false,
+  isPacked: false,
+  packUnit: "كرتون",
+  packSize: 30,
 };
 
 const emptyCustomer = { name: "", phone: "", address: "", notes: "", totalDebt: 0 };
@@ -583,15 +587,32 @@ function ProductQrPreview({ code, name }) {
 }
 
 function ReceiveStockModal({ product, close }) {
+  // إذا كان المنتج معبّأ، الوضع الافتراضي هو استلام بالكرتون
+  const [mode, setMode]     = useState(product.isPacked ? "pack" : "unit");
+  const [packs, setPacks]   = useState(1);
   const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState("");
+  const [note, setNote]     = useState("");
   const [saving, setSaving] = useState(false);
+
+  const packSize = Number(product.packSize || 1);
+  const packUnit = product.packUnit || "كرتون";
+  const unitLabel = product.unit || "قطعة";
+
+  // الكمية الفعلية بالحبة التي ستُضاف للمخزون
+  const computedQty = mode === "pack"
+    ? Math.round(Number(packs || 0) * packSize)
+    : Number(quantity || 0);
 
   async function submit(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      await receiveProductStock({ productId: product.id, productName: product.name, quantity, note });
+      await receiveProductStock({
+        productId:   product.id,
+        productName: product.name,
+        quantity:    computedQty,
+        note,
+      });
       close();
     } catch (err) {
       alert(err.message);
@@ -603,17 +624,78 @@ function ReceiveStockModal({ product, close }) {
   return (
     <Modal title="استلام مخزون عبر QR" close={close}>
       <form onSubmit={submit} className="space-y-4">
+        {/* معلومات المنتج */}
         <div className="soft-card flex items-center gap-3 p-3">
           <ProductImage p={product} />
           <div>
             <b>{product.name}</b>
-            <p className="text-gray-500">الكمية الحالية: {product.quantity} {product.unit}</p>
+            <p className="text-gray-500">الكمية الحالية: {formatStockDisplay(product)}</p>
+            {product.isPacked && (
+              <p className="text-xs text-blue-600">
+                📦 1 {packUnit} = {packSize} {unitLabel}
+              </p>
+            )}
           </div>
         </div>
-        <Field label="الكمية الداخلة للمخزون" type="number" value={quantity} onChange={setQuantity} required />
+
+        {/* اختيار طريقة الاستلام (للمنتجات المعبّأة فقط) */}
+        {product.isPacked && (
+          <div className="flex gap-2 rounded-2xl border p-1">
+            <button
+              type="button"
+              onClick={() => setMode("pack")}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-black transition ${mode === "pack" ? "bg-[#063f2b] text-white" : "text-gray-600 hover:bg-gray-50"}`}
+            >
+              📦 استلام بـ{packUnit}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("unit")}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-black transition ${mode === "unit" ? "bg-[#063f2b] text-white" : "text-gray-600 hover:bg-gray-50"}`}
+            >
+              🔢 استلام بالـ{unitLabel}
+            </button>
+          </div>
+        )}
+
+        {/* حقل الإدخال */}
+        {mode === "pack" && product.isPacked ? (
+          <div className="space-y-2">
+            <label className="block">
+              <span className="mb-2 block font-bold">عدد الـ{packUnit} المستلمة</span>
+              <input
+                className="input text-center text-xl font-black"
+                type="number" min="1"
+                value={packs}
+                onChange={(e) => setPacks(e.target.value)}
+                required
+              />
+            </label>
+            {/* معادلة التحويل */}
+            <div className="flex items-center justify-center gap-2 rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-800">
+              <span>{Number(packs) || 0} {packUnit}</span>
+              <span className="text-gray-400">×</span>
+              <span>{packSize} {unitLabel}</span>
+              <span className="text-gray-400">=</span>
+              <span className="text-xl text-blue-900">{computedQty} {unitLabel}</span>
+            </div>
+          </div>
+        ) : (
+          <Field
+            label={`الكمية (${unitLabel})`}
+            type="number" value={quantity}
+            onChange={setQuantity}
+            required
+          />
+        )}
+
         <Field label="ملاحظة اختيارية" value={note} onChange={setNote} />
-        <button className="btn-primary h-14 w-full font-black" disabled={saving}>
-          <PackageCheck className="inline" /> {saving ? "جاري الاستلام..." : "إضافة الكمية للمخزون"}
+
+        <button className="btn-primary h-14 w-full font-black" disabled={saving || computedQty <= 0}>
+          <PackageCheck className="inline" />{" "}
+          {saving
+            ? "جاري الاستلام..."
+            : `إضافة ${computedQty} ${unitLabel} للمخزون`}
         </button>
       </form>
     </Modal>
@@ -989,7 +1071,7 @@ function Inventory() {
       </section>
       <section className="card mt-6 border-red-100 bg-red-50/25 p-5">
         <div className="mb-4 flex items-center justify-between"><h2 className="flex items-center gap-2 text-2xl font-black"><Bell className="text-orange-500" /> تنبيه المخزون</h2><span className="badge badge-red">{low.length} منتجات</span></div>
-        <div className="divide-y divide-red-100">{low.map((p) => <div key={p.id} className="flex items-center justify-between py-3"><b>{p.name}</b><span className="text-red-600">الكمية الحالية: {p.quantity} {p.unit} - الحد الأدنى: {p.minimumStock}</span></div>)}</div>
+        <div className="divide-y divide-red-100">{low.map((p) => <div key={p.id} className="flex items-center justify-between py-3"><b>{p.name}</b><span className="text-red-600">المتوفر: {formatStockDisplay(p)} — الحد الأدنى: {p.minimumStock} {p.unit}</span></div>)}</div>
       </section>
       {scanner && <QrScannerModal title="استلام منتج عبر QR" description="امسح QR المنتج عند دخوله للمخزون، ثم أدخل الكمية المستلمة." close={() => setScanner(false)} onScan={handleStockQr} />}
       {receiving && <ReceiveStockModal product={receiving} close={() => setReceiving(null)} />}
@@ -1017,6 +1099,11 @@ function ProductRow({ product }) {
             <div className="mt-1 flex flex-wrap gap-1">
               <span className={`badge ${state[1]}`}>{state[0]}</span>
               {product.isWeightBased && <span className="badge bg-amber-100 text-amber-700">⚖️ وزني</span>}
+              {product.isPacked && (
+                <span className="badge bg-blue-100 text-blue-700" title={`1 ${product.packUnit} = ${product.packSize} ${product.unit}`}>
+                  📦 {product.packUnit} ({product.packSize} {product.unit})
+                </span>
+              )}
               {expiry && expiry.status !== "normal" && (
                 <span className={expiry.badgeClass}>
                   {expiry.status === "expired" ? "⛔" : expiry.status === "critical" ? "🔴" : "🟠"}
@@ -1168,7 +1255,7 @@ function ProductForm() {
                   type="checkbox"
                   className="h-5 w-5 accent-amber-600"
                   checked={!!form.isWeightBased}
-                  onChange={(e) => setForm({ ...form, isWeightBased: e.target.checked, unit: e.target.checked ? "كغ" : "قطعة" })}
+                  onChange={(e) => setForm({ ...form, isWeightBased: e.target.checked, isPacked: false, unit: e.target.checked ? "كغ" : "حبة" })}
                 />
                 <div>
                   <b>⚖️ منتج وزني (يُباع بالغرام)</b>
@@ -1181,6 +1268,73 @@ function ProductForm() {
                 </div>
               )}
             </div>
+
+            {/* ─── تبديل منتج معبّأ (كرتون/علبة) ─── */}
+            {!form.isWeightBased && (
+              <div className="md:col-span-2 space-y-3">
+                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-blue-50 p-4 transition hover:border-blue-300">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-blue-700"
+                    checked={!!form.isPacked}
+                    onChange={(e) => setForm({ ...form, isPacked: e.target.checked })}
+                  />
+                  <div>
+                    <b>📦 يُشترى بالتعبئة (كرتون / علبة…)</b>
+                    <p className="text-xs text-gray-500">
+                      مثال: البيض يُشترى بالكرتون (30 حبة) ويُباع بالحبة الواحدة
+                    </p>
+                  </div>
+                </label>
+
+                {form.isPacked && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 rounded-2xl border border-blue-200 bg-blue-50/60 p-4">
+                      {/* اسم التعبئة */}
+                      <div>
+                        <label className="mb-1 block text-sm font-bold">اسم التعبئة</label>
+                        <select
+                          className="input text-sm"
+                          value={form.packUnit}
+                          onChange={(e) => setForm({ ...form, packUnit: e.target.value })}
+                        >
+                          {packUnits.map((u) => <option key={u}>{u}</option>)}
+                        </select>
+                        <input
+                          className="input mt-1 text-sm"
+                          placeholder="أو اكتب اسماً آخر…"
+                          value={packUnits.includes(form.packUnit) ? "" : form.packUnit}
+                          onChange={(e) => e.target.value && setForm({ ...form, packUnit: e.target.value })}
+                        />
+                      </div>
+                      {/* حجم التعبئة */}
+                      <div>
+                        <label className="mb-1 block text-sm font-bold">
+                          عدد {form.unit || "حبة"} في الـ{form.packUnit || "كرتون"}
+                        </label>
+                        <input
+                          className="input text-sm"
+                          type="number" min="1"
+                          value={form.packSize}
+                          onChange={(e) => setForm({ ...form, packSize: e.target.value })}
+                        />
+                        <p className="mt-1 text-xs text-blue-700">
+                          1 {form.packUnit} = {form.packSize} {form.unit}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* محوّل الكراتين → حبات للكمية الأولية */}
+                    <PackConverter
+                      unit={form.unit}
+                      packUnit={form.packUnit}
+                      packSize={Number(form.packSize) || 1}
+                      onApply={(qty) => setForm((f) => ({ ...f, quantity: qty }))}
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-2">
             <button className="btn-primary h-14 font-black">{saving ? "جاري الحفظ..." : "حفظ المنتج"}</button>
@@ -1204,6 +1358,42 @@ function ProductForm() {
         setForm((current) => ({ ...current, barcode: code, qrCode: code }));
       }} />}
     </Page>
+  );
+}
+
+/**
+ * محوّل الكراتين ← حبات
+ * يتيح للمستخدم إدخال عدد الكراتين ثم نقل الناتج إلى حقل الكمية.
+ */
+function PackConverter({ unit, packUnit, packSize, onApply }) {
+  const [packs, setPacks] = useState("");
+  const ps    = Number(packSize) || 1;
+  const total = packs !== "" ? Math.round(Number(packs) * ps) : 0;
+
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 text-sm">
+      <p className="mb-2 font-bold text-blue-800">🔄 محوّل الكراتين ← حبات (للكمية الأولية)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="number" min="1"
+          value={packs}
+          onChange={(e) => setPacks(e.target.value)}
+          placeholder="عدد الكراتين"
+          className="w-28 rounded-xl border px-3 py-2 text-center font-black focus:border-blue-500 focus:outline-none"
+        />
+        <span className="text-gray-500">{packUnit || "كرتون"} × {ps} =</span>
+        <b className="text-blue-900">{total} {unit || "حبة"}</b>
+        {total > 0 && (
+          <button
+            type="button"
+            onClick={() => { onApply(total); setPacks(""); }}
+            className="mr-auto rounded-xl bg-blue-700 px-4 py-2 text-xs font-black text-white hover:bg-blue-800 active:scale-95"
+          >
+            ← تطبيق
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
