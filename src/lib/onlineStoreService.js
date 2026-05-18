@@ -16,8 +16,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { app, db } from "./firebase";
+import { db } from "./firebase";
 import { logActivity } from "./store";
 
 // ──────────────────────────────────────────────
@@ -130,27 +129,37 @@ function getFallbackImage(productName, category) {
 
 /**
  * البحث عن صورة تلقائية للمنتج.
- * يستدعي Cloud Function أولاً، وإن لم تتوفر ينتقل للصور المحلية.
+ * يستدعي Vercel Serverless Function (api/image-search) أولاً،
+ * ثم يتراجع للصور المحلية إن لم يتوفر مفتاح API.
  */
 export async function searchAutoImage(productId, productName, category = "أخرى") {
   try {
-    const functions = getFunctions(app, "us-central1");
-    const searchFn = httpsCallable(functions, "searchProductImage");
-    const result = await searchFn({ productName });
-    const imageUrl = result?.data?.imageUrl;
-    if (imageUrl) {
-      await updateDoc(doc(db, "products", productId), {
-        autoImageUrl: imageUrl,
-        imageSourceType: "auto",
-        imageApproved: false,
-        updatedAt: serverTimestamp(),
-      });
-      return imageUrl;
+    // استدعاء Vercel API — لا يحتاج Firebase Blaze plan
+    const base = typeof window !== "undefined"
+      ? window.location.origin
+      : "https://blgasm.vercel.app";
+    const res = await fetch(`${base}/api/image-search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productName }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.imageUrl) {
+        await updateDoc(doc(db, "products", productId), {
+          autoImageUrl: data.imageUrl,
+          imageSourceType: "auto",
+          imageApproved: false,
+          updatedAt: serverTimestamp(),
+        });
+        return data.imageUrl;
+      }
     }
   } catch {
-    /* Cloud Function غير متاحة — استخدام الصور المحلية */
+    /* API غير متاح — استخدام الصور المحلية */
   }
 
+  // Fallback: صور محلية مصنّفة
   const fallback = getFallbackImage(productName, category);
   await updateDoc(doc(db, "products", productId), {
     autoImageUrl: fallback,
