@@ -40,6 +40,15 @@ export function isStockSufficient(product, requestedGrams) {
  * مثال: "60 حبة (2 كرتون)" أو "75 حبة (2 كرتون + 15)"
  * يعيد null إذا لم يكن المنتج معبّأ.
  */
+/**
+ * عرض المخزون بوحدة التعبئة (كرتون/علبة…).
+ * `quantity` مُخزَّن بالحبات داخلياً؛ هذه الدالة تحوّله لعرض الكراتين.
+ *
+ * أمثلة:
+ *   150 حبة / 30 حبة/كرتون  → "5 كرتون"
+ *   149 حبة / 30 حبة/كرتون  → "4 كرتون + 19 حبة"
+ *   0 حبة                   → "0 كرتون"
+ */
 export function formatPackDisplay(product) {
   if (!product.isPacked || !product.packSize || !product.packUnit) return null;
   const qty = Number(product.quantity || 0);
@@ -48,9 +57,9 @@ export function formatPackDisplay(product) {
   const fullPacks = Math.floor(qty / ps);
   const remainder = qty % ps;
   const unitLabel = product.unit || "قطعة";
-  if (fullPacks === 0) return `${qty} ${unitLabel}`;
-  if (remainder === 0) return `${qty} ${unitLabel} (${fullPacks} ${product.packUnit})`;
-  return `${qty} ${unitLabel} (${fullPacks} ${product.packUnit} + ${remainder})`;
+  if (qty === 0) return `0 ${product.packUnit}`;
+  if (remainder === 0) return `${fullPacks} ${product.packUnit}`;
+  return `${fullPacks} ${product.packUnit} + ${remainder} ${unitLabel}`;
 }
 
 /** عرض كمية المخزون المناسبة للمنتج */

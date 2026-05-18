@@ -1231,21 +1231,79 @@ function ProductForm() {
               onChange={(v) => setForm({ ...form, salePrice: v })}
               required
             />
-            <Field
-              label={form.isWeightBased ? "المخزون الأولي (كغ) *" : "الكمية *"}
-              type="number" value={form.quantity}
-              onChange={(v) => setForm({ ...form, quantity: v })}
-              required
-            />
+            {/* ─── حقل الكمية — كراتين للمعبّأ، حبات/كغ للباقي ─── */}
+            {form.isPacked && !form.isWeightBased ? (
+              <label className="block">
+                <span className="mb-2 block font-bold">
+                  عدد الـ{form.packUnit || "كرتون"} *
+                </span>
+                <input
+                  className="input text-xl font-black text-center"
+                  type="number" min="0"
+                  value={
+                    Number(form.packSize) > 0
+                      ? Math.round(Number(form.quantity || 0) / Number(form.packSize))
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      quantity: Math.round(Number(e.target.value || 0) * Number(form.packSize || 1)),
+                    })
+                  }
+                  required
+                />
+                {Number(form.quantity) > 0 && (
+                  <p className="mt-1 text-center text-xs text-blue-700 font-bold">
+                    = {form.quantity} {form.unit || "حبة"} إجمالاً
+                  </p>
+                )}
+              </label>
+            ) : (
+              <Field
+                label={form.isWeightBased ? "المخزون الأولي (كغ) *" : "الكمية *"}
+                type="number" value={form.quantity}
+                onChange={(v) => setForm({ ...form, quantity: v })}
+                required
+              />
+            )}
             {!form.isWeightBased && (
               <Select label="الوحدة *" value={form.unit} options={units} onChange={(v) => setForm({ ...form, unit: v })} />
             )}
-            <Field
-              label={form.isWeightBased ? "الحد الأدنى للمخزون (كغ) *" : "الحد الأدنى للمخزون *"}
-              type="number" value={form.minimumStock}
-              onChange={(v) => setForm({ ...form, minimumStock: v })}
-              required
-            />
+            {/* ─── حقل الحد الأدنى — كراتين للمعبّأ، حبات/كغ للباقي ─── */}
+            {form.isPacked && !form.isWeightBased ? (
+              <label className="block">
+                <span className="mb-2 block font-bold">
+                  الحد الأدنى (بالـ{form.packUnit || "كرتون"}) *
+                </span>
+                <input
+                  className="input"
+                  type="number" min="0"
+                  value={
+                    Number(form.packSize) > 0
+                      ? Math.round(Number(form.minimumStock || 0) / Number(form.packSize))
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      minimumStock: Math.round(Number(e.target.value || 0) * Number(form.packSize || 1)),
+                    })
+                  }
+                  required
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  تنبيه عندما يقل عن {form.minimumStock || 0} {form.unit || "حبة"}
+                </p>
+              </label>
+            ) : (
+              <Field
+                label={form.isWeightBased ? "الحد الأدنى للمخزون (كغ) *" : "الحد الأدنى للمخزون *"}
+                type="number" value={form.minimumStock}
+                onChange={(v) => setForm({ ...form, minimumStock: v })}
+                required
+              />
+            )}
             <Field label="تاريخ الانتهاء (اختياري)" type="date" value={form.expiryDate || ""} onChange={(v) => setForm({ ...form, expiryDate: v })} />
             <Field label="المورد (اختياري)" value={form.supplier || ""} onChange={(v) => setForm({ ...form, supplier: v })} />
             {/* ─── تبديل منتج وزني ─── */}
@@ -1324,13 +1382,7 @@ function ProductForm() {
                       </div>
                     </div>
 
-                    {/* محوّل الكراتين → حبات للكمية الأولية */}
-                    <PackConverter
-                      unit={form.unit}
-                      packUnit={form.packUnit}
-                      packSize={Number(form.packSize) || 1}
-                      onApply={(qty) => setForm((f) => ({ ...f, quantity: qty }))}
-                    />
+                    {/* ملاحظة: حقل "عدد الكراتين" أعلاه يقبل الكراتين مباشرة */}
                   </>
                 )}
               </div>
@@ -1350,7 +1402,17 @@ function ProductForm() {
           <h2 className="mb-5 text-center text-2xl font-black">معاينة المنتج</h2>
           <div className="soft-card p-6 text-center">{preview ? <img src={preview} alt="" className="mx-auto mb-4 h-52 rounded-3xl object-cover" /> : <ProductImage p={form} className="mx-auto mb-4 h-52 w-52" />}<h3 className="text-2xl font-black">{form.name || "—"}</h3><span className="badge badge-green mt-3">{form.category}</span></div>
           <div className="mt-5"><ProductQrPreview code={form.qrCode || form.barcode} name={form.name} /></div>
-          <dl className="mt-5 divide-y">{[["الباركود", form.barcode], ["سعر الشراء", money(form.purchasePrice)], ["سعر البيع", money(form.salePrice)], ["الكمية", form.quantity], ["الوحدة", form.unit], ["تاريخ الانتهاء", form.expiryDate], ["المورد", form.supplier]].map(([k, v]) => <div key={k} className="flex justify-between py-3"><dt className="text-[#0d6a42]">{k}</dt><dd>{v || "-"}</dd></div>)}</dl>
+          <dl className="mt-5 divide-y">{[
+            ["الباركود", form.barcode],
+            ["سعر الشراء", money(form.purchasePrice)],
+            ["سعر البيع", money(form.salePrice)],
+            ["الكمية", form.isPacked && Number(form.packSize) > 0
+              ? `${Math.round(Number(form.quantity || 0) / Number(form.packSize))} ${form.packUnit || "كرتون"}`
+              : `${form.quantity || 0} ${form.unit || ""}`],
+            ["الوحدة", form.isPacked ? `${form.packUnit} (${form.packSize} ${form.unit})` : form.unit],
+            ["تاريخ الانتهاء", form.expiryDate],
+            ["المورد", form.supplier],
+          ].map(([k, v]) => <div key={k} className="flex justify-between py-3"><dt className="text-[#0d6a42]">{k}</dt><dd>{v || "-"}</dd></div>)}</dl>
         </aside>
       </div>
       {scanner && <QrScannerModal title="مسح QR المنتج" description="امسح رمز المنتج ليتم تعبئة الباركود وربط QR بهذا المنتج." close={() => setScanner(false)} onScan={(raw) => {
