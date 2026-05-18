@@ -429,17 +429,41 @@ function printArea(areaId, widthMm, heightMm) {
   _printStyleEl.textContent = `
     @media print {
       @page { size: ${sizeStr}; margin: 0mm; }
-      body > * { display: none !important; }
+
+      /* إخفاء كل شيء بـ visibility (يمكن للأبناء تجاوزه) وليس display:none */
+      body {
+        visibility: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+      }
+
+      /* إظهار منطقة الطباعة فقط */
       #${areaId} {
+        visibility: visible !important;
         display: block !important;
         position: fixed !important;
-        top: 0 !important; left: 0 !important;
+        top: 0 !important;
+        left: 0 !important;
         width: ${widthMm}mm !important;
         ${heightMm ? `height: ${heightMm}mm !important; overflow: hidden !important;` : ""}
         direction: rtl !important;
         background: #fff !important;
       }
-      #${areaId} * { visibility: visible !important; color: #000 !important; background: transparent !important; }
+
+      /* إظهار كل أبناء منطقة الطباعة */
+      #${areaId} * {
+        visibility: visible !important;
+        color: #000 !important;
+        background: transparent !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      /* حفاظ على خلفية بيضاء للحاويات الرئيسية داخل منطقة الطباعة */
+      #${areaId} > div {
+        background: #fff !important;
+      }
     }
   `;
   window.print();
