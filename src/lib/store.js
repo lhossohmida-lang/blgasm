@@ -297,19 +297,28 @@ export async function createSale({ cart, discount, paymentMethod, customer, cash
   const saleData = {
     id: saleId,
     invoiceNumber,
-    items: cart.map((item) => ({
-      productId: item.id,
-      name: item.name,
-      barcode: item.barcode || "",
-      qrCode: item.qrCode || item.barcode || "",
-      quantity: item.isWeightBased ? item.weightGrams : item.cartQty,
-      unit: item.unit,
-      purchasePrice: item.purchasePrice,
-      salePrice: item.salePrice,
-      total: item.salePrice * item.cartQty,
-      isWeightBased: item.isWeightBased || false,
-      weightGrams: item.weightGrams || null,
-    })),
+    items: cart.map((item) => {
+      // للمنتجات المعبّأة: سعر الشراء مُدخَل بالكرتون → نحوّله للحبة
+      const piecePurchasePrice = item.isPacked && Number(item.packSize) > 0
+        ? item.purchasePrice / item.packSize
+        : item.purchasePrice;
+      return {
+        productId: item.id,
+        name: item.name,
+        barcode: item.barcode || "",
+        qrCode: item.qrCode || item.barcode || "",
+        quantity: item.isWeightBased ? item.weightGrams : item.cartQty,
+        unit: item.unit,
+        purchasePrice: piecePurchasePrice,  // دائماً بوحدة البيع (حبة/كغ)
+        salePrice: item.salePrice,
+        total: item.salePrice * item.cartQty,
+        isWeightBased: item.isWeightBased || false,
+        weightGrams: item.weightGrams || null,
+        isPacked: item.isPacked || false,
+        packUnit: item.packUnit || null,
+        packSize: item.packSize || null,
+      };
+    }),
     subtotal,
     discount: Number(discount || 0),
     total,

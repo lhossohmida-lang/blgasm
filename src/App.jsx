@@ -1116,10 +1116,19 @@ function ProductRow({ product }) {
       </td>
       <td className="p-4 text-gray-600">{product.barcode}</td>
       <td className="p-4 font-black text-[#0d6a42]">{stockDisplay}</td>
-      <td className="p-4">{money(product.purchasePrice)}</td>
+      <td className="p-4">
+        {product.isPacked && Number(product.packSize) > 0 ? (
+          <div>
+            <div className="font-bold">{money(product.purchasePrice)}<span className="text-xs font-normal text-gray-400">/{product.packUnit || "كرتون"}</span></div>
+            <div className="text-xs text-gray-500">{money(product.purchasePrice / product.packSize)}<span>/{product.unit || "حبة"}</span></div>
+          </div>
+        ) : money(product.purchasePrice)}
+      </td>
       <td className="p-4">
         {product.isWeightBased
           ? <span title="سعر الكيلوغرام">{money(product.salePrice)}<span className="text-xs text-gray-400">/كغ</span></span>
+          : product.isPacked
+          ? <span>{money(product.salePrice)}<span className="text-xs text-gray-400">/{product.unit || "حبة"}</span></span>
           : money(product.salePrice)
         }
       </td>
@@ -1224,13 +1233,55 @@ function ProductForm() {
               </button>
             </div>
             <Select label="الفئة *" value={form.category} options={categories} onChange={(v) => setForm({ ...form, category: v })} />
-            <Field label="سعر الشراء (دج) *" type="number" value={form.purchasePrice} onChange={(v) => setForm({ ...form, purchasePrice: v })} required />
-            <Field
-              label={form.isWeightBased ? "سعر الكيلوغرام (دج) *" : "سعر البيع (دج) *"}
-              type="number" value={form.salePrice}
-              onChange={(v) => setForm({ ...form, salePrice: v })}
-              required
-            />
+            {/* ─── سعر الشراء ─── */}
+            <div>
+              <label className="block">
+                <span className="mb-2 block font-bold">
+                  {form.isPacked
+                    ? `سعر شراء الـ${form.packUnit || "كرتون"} (دج) *`
+                    : "سعر الشراء (دج) *"}
+                </span>
+                <input
+                  className="input"
+                  type="number" min="0"
+                  value={form.purchasePrice}
+                  onChange={(e) => setForm({ ...form, purchasePrice: e.target.value })}
+                  required
+                />
+              </label>
+              {form.isPacked && Number(form.purchasePrice) > 0 && Number(form.packSize) > 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  سعر شراء الحبة:{" "}
+                  <b className="text-[#0d6a42]">
+                    {money(Number(form.purchasePrice) / Number(form.packSize))}
+                  </b>
+                </p>
+              )}
+            </div>
+
+            {/* ─── سعر البيع ─── */}
+            <div>
+              <Field
+                label={
+                  form.isWeightBased
+                    ? "سعر الكيلوغرام (دج) *"
+                    : form.isPacked
+                    ? `سعر بيع الـ${form.unit || "حبة"} (دج) *`
+                    : "سعر البيع (دج) *"
+                }
+                type="number" value={form.salePrice}
+                onChange={(v) => setForm({ ...form, salePrice: v })}
+                required
+              />
+              {form.isPacked && Number(form.salePrice) > 0 && Number(form.purchasePrice) > 0 && Number(form.packSize) > 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  هامش الربح للحبة:{" "}
+                  <b className={Number(form.salePrice) > Number(form.purchasePrice) / Number(form.packSize) ? "text-[#0d6a42]" : "text-red-600"}>
+                    {money(Number(form.salePrice) - Number(form.purchasePrice) / Number(form.packSize))}
+                  </b>
+                </p>
+              )}
+            </div>
             {/* ─── حقل الكمية — كراتين للمعبّأ، حبات/كغ للباقي ─── */}
             {form.isPacked && !form.isWeightBased ? (
               <label className="block">
