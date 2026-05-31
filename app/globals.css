@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-arabic: "Noto Kufi Arabic", "Tajawal", "Cairo", Tahoma, Arial, sans-serif;
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  direction: rtl;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(135deg, rgba(73, 163, 92, 0.18), transparent 34%),
+    linear-gradient(225deg, rgba(250, 204, 21, 0.18), transparent 30%),
+    linear-gradient(180deg, #fbfff8 0%, #f6f8ef 46%, #fff7ed 100%);
+  color: #17231c;
+  font-family: var(--font-arabic);
+}
+
+.dark body {
+  background:
+    linear-gradient(135deg, rgba(73, 163, 92, 0.2), transparent 34%),
+    linear-gradient(225deg, rgba(249, 115, 22, 0.16), transparent 30%),
+    linear-gradient(180deg, #0f1512 0%, #17231c 48%, #221b12 100%);
+  color: #f7f8f4;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/65 bg-white/70 shadow-glass backdrop-blur-xl dark:border-white/10 dark:bg-white/10;
+  }
+
+  .soft-panel {
+    @apply border border-black/5 bg-white/82 shadow-soft backdrop-blur-md dark:border-white/10 dark:bg-white/8;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-market-ink/70 transition hover:bg-leaf-50 hover:text-leaf-700 dark:text-white/72 dark:hover:bg-white/10 dark:hover:text-white;
+  }
+
+  .nav-link-active {
+    @apply bg-leaf-600 text-white shadow-soft hover:bg-leaf-600 hover:text-white dark:bg-leaf-500 dark:text-market-ink dark:hover:bg-leaf-500;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-market-ink outline-none transition placeholder:text-market-ink/38 focus:border-leaf-500 focus:ring-4 focus:ring-leaf-500/15 dark:border-white/12 dark:bg-white/8 dark:text-white dark:placeholder:text-white/38;
+  }
+
+  .label {
+    @apply mb-2 block text-xs font-bold text-market-ink/65 dark:text-white/65;
+  }
+
+  .btn {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-leaf-600 text-white shadow-soft hover:bg-leaf-700 dark:bg-leaf-500 dark:text-market-ink dark:hover:bg-leaf-400;
+  }
+
+  .btn-secondary {
+    @apply border border-black/10 bg-white/78 text-market-ink hover:bg-white dark:border-white/12 dark:bg-white/10 dark:text-white dark:hover:bg-white/15;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .metric-card {
+    @apply rounded-lg border border-white/70 bg-white/74 p-4 shadow-soft backdrop-blur-lg dark:border-white/10 dark:bg-white/10;
+  }
+
+  .toast {
+    @apply flex items-start gap-3 rounded-lg border p-3 shadow-glass backdrop-blur-xl;
+  }
+
+  .toast-success {
+    @apply border-leaf-500/25 bg-leaf-50/92 text-leaf-700 dark:bg-leaf-500/18 dark:text-leaf-50;
+  }
+
+  .toast-error {
+    @apply border-red-500/25 bg-red-50/92 text-red-700 dark:bg-red-500/18 dark:text-red-50;
+  }
+
+  .toast-warning {
+    @apply border-citrus-500/30 bg-citrus-100/92 text-amber-900 dark:bg-citrus-500/18 dark:text-citrus-100;
+  }
+
+  .toast-info {
+    @apply border-sky-500/25 bg-sky-50/92 text-sky-800 dark:bg-sky-500/18 dark:text-sky-50;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-area {
+    display: block !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 5mm;
+  }
+}
