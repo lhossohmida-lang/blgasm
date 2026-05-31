@@ -9,3 +9,5 @@ yarn-error.log*
 pnpm-debug.log*
 dist
 coverage
+dev-server*.log
+tsconfig.tsbuildinfo

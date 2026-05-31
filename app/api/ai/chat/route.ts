@@ -26,19 +26,21 @@ export async function POST(request: Request) {
   });
 
   const stream = await openrouter.chat.send({
-    model: MODEL,
-    stream: true,
-    messages: [
-      {
-        role: "system",
-        content:
-          "أنت مساعد تجاري داخل تطبيق محل مواد غذائية جزائري. أجب بالعربية باختصار وركّز على الأرقام والاقتراحات العملية. لا تطلب بيانات غير موجودة، واستعمل فقط ملخص البيانات المرسل.",
-      },
-      {
-        role: "user",
-        content: `ملخص بيانات المتجر الضرورية فقط:\n${JSON.stringify(context, null, 2)}\n\nسؤال التاجر: ${message}`,
-      },
-    ],
+    chatRequest: {
+      model: MODEL,
+      stream: true,
+      messages: [
+        {
+          role: "system",
+          content:
+            "أنت مساعد تجاري داخل تطبيق محل مواد غذائية جزائري. أجب بالعربية باختصار وركّز على الأرقام والاقتراحات العملية. لا تطلب بيانات غير موجودة، واستعمل فقط ملخص البيانات المرسل.",
+        },
+        {
+          role: "user",
+          content: `ملخص بيانات المتجر الضرورية فقط:\n${JSON.stringify(context, null, 2)}\n\nسؤال التاجر: ${message}`,
+        },
+      ],
+    },
   });
 
   const encoder = new TextEncoder();

@@ -255,7 +255,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         createdBy: user.uid,
       };
 
-      let products = applySaleToInventory(data.products, totals.items);
+      const products = applySaleToInventory(data.products, totals.items);
       let creditCustomers = data.creditCustomers;
       let creditTransactions = data.creditTransactions;
       const operations: SyncOperation[] = [

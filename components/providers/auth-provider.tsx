@@ -50,20 +50,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let settled = false;
+    const fallback = window.setTimeout(() => {
+      if (!settled) {
+        setLoading(false);
+      }
+    }, 1500);
+
     enableFirebaseOfflinePersistence();
     const demoEnabled = window.localStorage.getItem("blgasm-demo-mode") === "1";
     if (demoEnabled) {
+      settled = true;
+      window.clearTimeout(fallback);
       setUser(DEMO_USER);
       setLoading(false);
       return () => undefined;
     }
 
     const unsubscribe = listenToAuth((firebaseUser) => {
+      settled = true;
+      window.clearTimeout(fallback);
       setUser(firebaseUser ? mapFirebaseUser(firebaseUser) : null);
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      window.clearTimeout(fallback);
+      unsubscribe();
+    };
   }, []);
 
   const login = useCallback(
