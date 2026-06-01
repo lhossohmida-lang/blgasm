@@ -28,7 +28,7 @@ export default function CreditsPage() {
   const [selectedId, setSelectedId] = useState("");
   const [deleting, setDeleting] = useState<CreditCustomer | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", address: "" });
+  const [form, setForm] = useState({ name: "", phone: "", address: "", openingDebt: 0 });
   const [payment, setPayment] = useState({ amount: 0, note: "" });
 
   const customers = useMemo(() => {
@@ -53,9 +53,15 @@ export default function CreditsPage() {
   async function submitCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const customer = await upsertCustomer(form);
+      const customer = await upsertCustomer({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        totalDebt: form.openingDebt,
+        remainingDebt: form.openingDebt,
+      });
       setSelectedId(customer.id);
-      setForm({ name: "", phone: "", address: "" });
+      setForm({ name: "", phone: "", address: "", openingDebt: 0 });
       setShowForm(false);
     } catch (error) {
       notify({ tone: "error", title: "تعذر حفظ الحساب", body: error instanceof Error ? error.message : undefined });
@@ -138,6 +144,10 @@ export default function CreditsPage() {
         <button className="ios-chip">
           <Filter className="h-4 w-4" />
           فلترة
+        </button>
+        <button className="ios-chip ios-chip-active" onClick={() => setShowForm((value) => !value)}>
+          <Plus className="h-4 w-4" />
+          إضافة حساب
         </button>
       </div>
 
@@ -272,6 +282,13 @@ export default function CreditsPage() {
               <Input label="اسم الشخص" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
               <Input label="رقم الهاتف" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
               <Input label="العنوان" value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} />
+              <Input
+                label="المبلغ غير المدفوع"
+                type="number"
+                min="0"
+                value={form.openingDebt}
+                onChange={(event) => setForm((current) => ({ ...current, openingDebt: Number(event.target.value) }))}
+              />
               <Button className="w-full">حفظ الحساب</Button>
             </form>
           ) : null}

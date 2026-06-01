@@ -311,15 +311,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const now = new Date().toISOString();
       const existing = input.id ? data.creditCustomers.find((customer) => customer.id === input.id) : undefined;
+      const openingDebt = existing ? 0 : roundMoney(Math.max(0, Number(input.totalDebt) || Number(input.remainingDebt) || 0));
       const customer: CreditCustomer = {
         id: existing?.id ?? crypto.randomUUID(),
         name: input.name.trim(),
         phone: input.phone?.trim() || undefined,
         address: input.address?.trim() || undefined,
-        totalDebt: existing?.totalDebt ?? 0,
+        totalDebt: existing?.totalDebt ?? openingDebt,
         totalPaid: existing?.totalPaid ?? 0,
-        remainingDebt: existing?.remainingDebt ?? 0,
-        lastActivityAt: existing?.lastActivityAt ?? now,
+        remainingDebt: existing?.remainingDebt ?? openingDebt,
+        lastActivityAt: openingDebt > 0 ? now : (existing?.lastActivityAt ?? now),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
@@ -327,7 +328,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const creditCustomers = existing
         ? data.creditCustomers.map((item) => (item.id === existing.id ? customer : item))
         : [customer, ...data.creditCustomers];
-      await commit({ ...data, creditCustomers }, [createSyncOperation("customer.upsert", customer, customer.id)]);
+      const openingTransaction: CreditTransaction | null =
+        !existing && openingDebt > 0
+          ? {
+              id: crypto.randomUUID(),
+              customerId: customer.id,
+              type: "invoice",
+              amount: openingDebt,
+              paidAmount: 0,
+              remainingAmount: openingDebt,
+              note: "دين أولي عند إنشاء الحساب",
+              createdAt: now,
+            }
+          : null;
+      await commit(
+        {
+          ...data,
+          creditCustomers,
+          creditTransactions: openingTransaction ? [openingTransaction, ...data.creditTransactions] : data.creditTransactions,
+        },
+        [
+          createSyncOperation("customer.upsert", customer, customer.id),
+          ...(openingTransaction ? [createSyncOperation("transaction.create", openingTransaction, openingTransaction.id)] : []),
+        ],
+      );
       notify({ tone: "success", title: existing ? "تم تعديل حساب الكريدي" : "تم إنشاء حساب كريدي" });
       return customer;
     },
