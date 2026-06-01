@@ -1,144 +1,183 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Edit, PackageSearch, Search, Trash2 } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { AlertTriangle, Box, Filter, Grid2X2, Plus, QrCode, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input, Select } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
 import { ProductForm } from "@/components/products/product-form";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/components/providers/store-provider";
 import type { Product } from "@/types";
-import { formatCurrency, formatDate, formatNumber, formatPercent } from "@/utils/format";
+import { formatCurrency, formatNumber } from "@/utils/format";
+import { cn } from "@/utils/cn";
+
+function statusFor(product: Product) {
+  if (product.quantity <= 0) {
+    return { label: "نفد", className: "bg-red-50 text-red-600", tone: "red" as const };
+  }
+  if (product.quantity <= product.lowStockAlert) {
+    return { label: "منخفض", className: "bg-orange-50 text-orange-600", tone: "orange" as const };
+  }
+  return { label: "متوفر", className: "bg-leaf-50 text-leaf-700", tone: "green" as const };
+}
 
 export default function InventoryPage() {
   const { data, deleteProduct } = useStore();
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
+  const [filter, setFilter] = useState("all");
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
-
-  const categories = useMemo(() => {
-    const values = new Set(data?.products.map((product) => product.category));
-    return ["all", ...values];
-  }, [data?.products]);
+  const categories = useMemo(
+    () => [...new Set((data?.products ?? []).map((product) => product.category).filter(Boolean))],
+    [data?.products],
+  );
 
   const products = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return (data?.products ?? []).filter((product) => {
-      const matchesQuery =
-        !normalized ||
-        product.name.toLowerCase().includes(normalized) ||
-        product.qrCode.toLowerCase().includes(normalized) ||
-        product.category.toLowerCase().includes(normalized);
-      const matchesCategory = category === "all" || product.category === category;
-      return matchesQuery && matchesCategory;
-    });
-  }, [category, data?.products, query]);
+    return (data?.products ?? [])
+      .filter((product) => {
+        if (!normalized) return true;
+        return (
+          product.name.toLowerCase().includes(normalized) ||
+          product.qrCode.toLowerCase().includes(normalized) ||
+          product.category.toLowerCase().includes(normalized)
+        );
+      })
+      .filter((product) => {
+        if (filter === "low") return product.quantity <= product.lowStockAlert;
+        if (filter.startsWith("category:")) return product.category === filter.replace("category:", "");
+        return true;
+      });
+  }, [data?.products, filter, query]);
+
+  if (!data) {
+    return null;
+  }
 
   return (
-    <div>
-      <PageHeader
-        icon={PackageSearch}
-        title="المخزون"
-        description="جدول وبطاقات لكل المنتجات مع حسابات الربح والتنبيهات."
-      />
-
-      <Card className="mb-5">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px]">
-          <Input
-            label="بحث"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="ابحث بالاسم أو QR أو التصنيف"
-          />
-          <Select label="فلترة التصنيف" value={category} onChange={(event) => setCategory(event.target.value)}>
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item === "all" ? "كل التصنيفات" : item}
-              </option>
-            ))}
-          </Select>
+    <div className="ios-page">
+      <div className="ios-topbar">
+        <img src="/storefront.svg" alt="" className="ios-avatar" />
+        <div className="flex-1 pt-2">
+          <h1 className="ios-title">المخزون</h1>
+          <p className="ios-subtitle">إدارة وتتبع جميع منتجاتك</p>
         </div>
-      </Card>
+        <button className="ios-circle-button" title="بحث">
+          <Search className="h-5 w-5" />
+        </button>
+      </div>
 
-      {products.length ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {products.map((product) => (
-            <Card key={product.id} className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-lg font-black">{product.name}</p>
-                  <p className="mt-1 text-xs text-market-ink/55 dark:text-white/55">
-                    {product.qrCode} · {product.category}
+      <div className="mb-6 hidden lg:flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black">المخزون</h1>
+          <p className="mt-1 text-market-ink/60">قائمة المنتجات، الكميات، أسعار البيع وتنبيهات النفاد.</p>
+        </div>
+        <Link href="/products/new" className="btn btn-primary">
+          <Plus className="h-4 w-4" />
+          إضافة منتج
+        </Link>
+      </div>
+
+      <div className="ios-search mb-4">
+        <Search className="h-6 w-6 text-market-ink/45" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="ابحث عن منتج بالاسم أو الباركود"
+          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-market-ink/42"
+        />
+      </div>
+
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        {[
+          { id: "all", label: "الكل", icon: Grid2X2 },
+          { id: "low", label: "منخفض", icon: AlertTriangle },
+          ...categories.map((category) => ({ id: `category:${category}`, label: category, icon: Box })),
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id)}
+              className={cn("ios-chip shrink-0", filter === item.id && "ios-chip-active")}
+            >
+              <Icon className="h-5 w-5" />
+              {item.label}
+            </button>
+          );
+        })}
+        <button type="button" className="ios-chip shrink-0">
+          <Filter className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-sm font-bold text-market-ink/65">{formatNumber(products.length)} منتج</span>
+        <button className="ios-chip min-h-10 px-4">
+          <SlidersHorizontal className="h-4 w-4" />
+          الأحدث أولاً
+        </button>
+      </div>
+
+      <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
+        {products.map((product) => {
+          const status = statusFor(product);
+          return (
+            <article key={product.id} className="ios-card-tight flex items-center gap-4">
+              <button className="self-start rounded-full p-2 text-market-ink/55" onClick={() => setDeleting(product)} title="حذف">
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-black">{product.name}</h2>
+                    <p className="mt-1 flex items-center gap-2 text-sm text-market-ink/55">
+                      QR {product.qrCode}
+                      <QrCode className="h-4 w-4" />
+                    </p>
+                  </div>
+                  <span className={cn("rounded-2xl px-4 py-2 text-sm font-black", status.className)}>{status.label}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <p className="font-bold text-leaf-700">سعر البيع {formatCurrency(product.sellPrice)}</p>
+                  <p className={status.tone === "green" ? "text-leaf-700" : "text-red-600"}>
+                    {formatNumber(product.quantity)} وحدة
                   </p>
                 </div>
-                <div
-                  className={`rounded-lg px-3 py-2 text-sm font-black ${
-                    product.quantity <= 0
-                      ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-100"
-                      : product.quantity <= product.lowStockAlert
-                        ? "bg-citrus-100 text-amber-900 dark:bg-citrus-500/20 dark:text-citrus-100"
-                        : "bg-leaf-100 text-leaf-700 dark:bg-leaf-500/20 dark:text-leaf-50"
-                  }`}
-                >
-                  {formatNumber(product.quantity)} قطعة
-                </div>
               </div>
+              {product.imageUrl ? (
+                <button onClick={() => setEditing(product)} className="h-24 w-24 shrink-0 rounded-[22px] border border-black/5 bg-white p-2 shadow-soft">
+                  <img src={product.imageUrl} alt="" className="h-full w-full object-contain" />
+                </button>
+              ) : (
+                <button onClick={() => setEditing(product)} className="ios-icon h-20 w-20 shrink-0">
+                  <Box className="h-8 w-8" />
+                </button>
+              )}
+            </article>
+          );
+        })}
+      </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                <div>
-                  <p className="text-xs text-market-ink/55 dark:text-white/55">تكلفة القطعة</p>
-                  <p className="font-black">{formatCurrency(product.unitCost)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-market-ink/55 dark:text-white/55">سعر البيع</p>
-                  <p className="font-black">{formatCurrency(product.sellPrice)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-market-ink/55 dark:text-white/55">ربح القطعة</p>
-                  <p className="font-black">{formatCurrency(product.profitPerUnit)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-market-ink/55 dark:text-white/55">نسبة الربح</p>
-                  <p className="font-black">{formatPercent(product.profitPercent)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3 text-xs text-market-ink/55 dark:border-white/10 dark:text-white/55">
-                <span>آخر تعديل: {formatDate(product.updatedAt)}</span>
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => setEditing(product)} title="تعديل">
-                    <Edit className="h-4 w-4" />
-                    تعديل
-                  </Button>
-                  <Button variant="danger" onClick={() => setDeleting(product)} title="حذف">
-                    <Trash2 className="h-4 w-4" />
-                    حذف
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon={Search} title="لا توجد منتجات مطابقة" body="غيّر البحث أو أضف منتجاً جديداً من صفحة إدخال المنتج." />
-      )}
+      <Link
+        href="/products/new"
+        className="fixed bottom-28 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-leaf-600 px-8 py-4 text-lg font-black text-white shadow-glass lg:hidden"
+      >
+        <Plus className="h-6 w-6" />
+        إضافة منتج
+      </Link>
 
       {editing ? (
         <div className="fixed inset-0 z-40 overflow-y-auto bg-black/35 p-4 backdrop-blur-sm">
           <div className="mx-auto my-8 max-w-3xl">
-            <Card>
+            <div className="ios-card">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className="text-xl font-black">تعديل المنتج</h2>
-                <Button variant="secondary" onClick={() => setEditing(null)}>
-                  إغلاق
-                </Button>
+                <Button variant="secondary" onClick={() => setEditing(null)}>إغلاق</Button>
               </div>
               <ProductForm product={editing} onSaved={() => setEditing(null)} />
-            </Card>
+            </div>
           </div>
         </div>
       ) : null}
@@ -146,7 +185,7 @@ export default function InventoryPage() {
       <ConfirmDialog
         open={Boolean(deleting)}
         title="حذف المنتج"
-        body={`هل تريد حذف ${deleting?.name ?? "هذا المنتج"}؟ لا يمكن التراجع عن العملية بعد المزامنة.`}
+        body={`هل تريد حذف ${deleting?.name ?? "هذا المنتج"}؟ لا يمكن التراجع بعد المزامنة.`}
         confirmLabel="حذف"
         onCancel={() => setDeleting(null)}
         onConfirm={() => {

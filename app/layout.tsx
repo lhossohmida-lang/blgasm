@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: "بلقاسم POS",
   description: "تطبيق إدارة محل مواد غذائية يعمل بدون إنترنت ويدعم QR والكريدي والتقارير.",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/blgasm-logo.png",
+    apple: "/blgasm-logo.png",
+  },
   appleWebApp: {
     capable: true,
     title: "بلقاسم POS",

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 110">
+  <rect x="24" y="8" width="38" height="94" rx="9" fill="#e9f6ff" stroke="#d6e8f6"/>
+  <path d="M31 8h24l5 18H26l5-18Z" fill="#0e8cd6"/>
+  <rect x="28" y="37" width="30" height="34" rx="6" fill="#fff"/>
+  <path d="M31 51c10-12 19 10 28-2v16H31V51Z" fill="#5cc36e"/>
+  <text x="43" y="57" text-anchor="middle" font-size="10" font-family="Arial" font-weight="700" fill="#0e8cd6">حليب</text>
+</svg>

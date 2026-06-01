@@ -1,48 +1,61 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarDays, ChartNoAxesCombined, Printer, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
+import { Banknote, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Printer, TrendingUp, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
 import { ReportPrint } from "@/components/print/report-print";
 import { useStore } from "@/components/providers/store-provider";
 import type { DashboardStats, Sale } from "@/types";
 import { computeDashboardStats, roundMoney } from "@/utils/calculations";
-import { formatCurrency, formatNumber, formatPercent } from "@/utils/format";
+import { formatCurrency } from "@/utils/format";
+import { cn } from "@/utils/cn";
 
-function rangeFilter(sales: Sale[], from: string, to: string) {
-  const start = from ? new Date(`${from}T00:00:00`) : new Date(0);
-  const end = to ? new Date(`${to}T23:59:59`) : new Date();
-  return sales.filter((sale) => {
-    const createdAt = new Date(sale.createdAt);
-    return createdAt >= start && createdAt <= end;
-  });
+type Period = "day" | "week" | "month" | "year";
+
+function rangeFilter(sales: Sale[], period: Period) {
+  const now = new Date();
+  const start = new Date(now);
+  if (period === "day") start.setHours(0, 0, 0, 0);
+  if (period === "week") start.setDate(now.getDate() - 7);
+  if (period === "month") start.setMonth(now.getMonth() - 1);
+  if (period === "year") start.setFullYear(now.getFullYear() - 1);
+  return sales.filter((sale) => new Date(sale.createdAt) >= start);
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function ReportMetric({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  orange,
+  wide,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: typeof TrendingUp;
+  orange?: boolean;
+  wide?: boolean;
+}) {
   return (
-    <div className="metric-card">
-      <p className="text-xs font-bold text-market-ink/55 dark:text-white/55">{label}</p>
-      <p className="mt-2 text-xl font-black">{value}</p>
+    <div className={cn("ios-card", wide && "col-span-2")}>
+      <div className={orange ? "ios-icon ios-icon-orange" : "ios-icon"}>
+        <Icon className="h-6 w-6" />
+      </div>
+      <p className="mt-3 text-sm text-market-ink/60">{label}</p>
+      <p className="mt-1 text-2xl font-black">{value}</p>
+      <p className={cn("mt-2 text-sm font-bold", hint.includes("↓") ? "text-red-600" : "text-leaf-700")}>{hint}</p>
     </div>
   );
 }
 
 export default function ReportsPage() {
   const { data } = useStore();
-  const today = new Date().toISOString().slice(0, 10);
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-  const [from, setFrom] = useState(monthStart);
-  const [to, setTo] = useState(today);
+  const [period, setPeriod] = useState<Period>("day");
 
   const report = useMemo(() => {
-    if (!data) {
-      return null;
-    }
-
-    const sales = rangeFilter(data.sales, from, to);
+    if (!data) return null;
+    const sales = rangeFilter(data.sales, period);
     const stats = computeDashboardStats(data.products, sales, data.creditCustomers);
     const cashSales = sales.filter((sale) => sale.type === "cash");
     const creditSales = sales.filter((sale) => sale.type === "credit");
@@ -53,126 +66,156 @@ export default function ReportsPage() {
       cashCollected: roundMoney(cashSales.reduce((sum, sale) => sum + sale.paidAmount, 0)),
       creditUncollected: roundMoney(creditSales.reduce((sum, sale) => sum + sale.remainingAmount, 0)),
     };
-
     return {
-      stats: customStats,
       sales,
+      stats: customStats,
       cashSalesTotal: roundMoney(cashSales.reduce((sum, sale) => sum + sale.totalAmount, 0)),
       creditSalesTotal: roundMoney(creditSales.reduce((sum, sale) => sum + sale.totalAmount, 0)),
     };
-  }, [data, from, to]);
+  }, [data, period]);
 
-  if (!data || !report) {
-    return null;
-  }
+  if (!data || !report) return null;
 
   const lowStock = data.products.filter((product) => product.quantity <= product.lowStockAlert);
-  const highestProfit = [...data.products].sort((a, b) => b.profitPerUnit - a.profitPerUnit).slice(0, 6);
-  const weakProfit = [...data.products].sort((a, b) => a.profitPercent - b.profitPercent).slice(0, 6);
+  const highestProfit = [...data.products].sort((a, b) => b.profitPerUnit - a.profitPerUnit).slice(0, 3);
+  const bars = report.sales.length ? [38, 48, 55, 72, 64, 82, 88] : [0, 0, 0, 0, 0, 0, 0];
+  const totalPaymentSales = report.cashSalesTotal + report.creditSalesTotal;
+  const cashPercent = totalPaymentSales > 0 ? Math.round((report.cashSalesTotal / totalPaymentSales) * 100) : 0;
+  const creditPercent = totalPaymentSales > 0 ? Math.round((report.creditSalesTotal / totalPaymentSales) * 100) : 0;
 
   return (
-    <div>
-      <PageHeader
-        icon={ChartNoAxesCombined}
-        title="التقارير والأرباح"
-        description="أرباح يومية وأسبوعية وشهرية وسنوية وفترة مخصصة مع فصل الكريدي عن النقد."
-        action={
-          <Button type="button" variant="secondary" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            طباعة التقرير
-          </Button>
-        }
-      />
-
-      <Card className="mb-5">
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <Input label="من تاريخ" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-          <Input label="إلى تاريخ" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-          <div className="flex items-end">
-            <Button type="button" variant="secondary" onClick={() => {
-              setFrom(monthStart);
-              setTo(today);
-            }}>
-              <CalendarDays className="h-4 w-4" />
-              هذا الشهر
-            </Button>
-          </div>
+    <div className="ios-page">
+      <div className="ios-topbar">
+        <img src="/storefront.svg" alt="" className="ios-avatar" />
+        <div className="flex-1 pt-2">
+          <h1 className="ios-title">التقارير</h1>
+          <p className="ios-subtitle">نظرة عامة على أداء متجرك</p>
         </div>
-      </Card>
+        <button className="ios-circle-button" title="التاريخ">
+          <CalendarDays className="h-5 w-5" />
+        </button>
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="ربح اليوم" value={formatCurrency(report.stats.todayProfit)} />
-        <Metric label="ربح الأسبوع" value={formatCurrency(report.stats.weekProfit)} />
-        <Metric label="ربح الفترة" value={formatCurrency(report.stats.monthProfit)} />
-        <Metric label="ربح السنة" value={formatCurrency(report.stats.yearProfit)} />
-        <Metric label="المبيعات النقدية" value={formatCurrency(report.cashSalesTotal)} />
-        <Metric label="مبيعات الكريدي" value={formatCurrency(report.creditSalesTotal)} />
-        <Metric label="المال المقبوض نقداً" value={formatCurrency(report.stats.cashCollected)} />
-        <Metric label="غير المقبوض/الكريدي" value={formatCurrency(report.stats.creditUncollected)} />
-        <Metric label="الديون المتبقية" value={formatCurrency(report.stats.totalDebt)} />
-        <Metric label="عدد عمليات الفترة" value={formatNumber(report.sales.length)} />
-        <Metric label="منتجات أوشكت على النفاد" value={formatNumber(lowStock.length)} />
-        <Metric label="إجمالي المبيعات" value={formatCurrency(report.stats.monthSales)} />
+      <div className="mb-6 hidden lg:flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black">التقارير والأرباح</h1>
+          <p className="mt-1 text-market-ink/60">مبيعات نقدية، كريدي، أرباح، ديون وتنبيهات المخزون.</p>
+        </div>
+        <Button variant="secondary" onClick={() => window.print()}>
+          <Printer className="h-4 w-4" />
+          طباعة التقرير
+        </Button>
+      </div>
+
+      <div className="mb-5 flex items-center gap-3">
+        <button className="ios-circle-button h-12 w-12">
+          <CalendarDays className="h-5 w-5" />
+        </button>
+        <div className="ios-card-tight grid flex-1 grid-cols-4 gap-2 p-2">
+          {[
+            ["day", "يومي"],
+            ["week", "أسبوعي"],
+            ["month", "شهري"],
+            ["year", "سنوي"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setPeriod(id as Period)}
+              className={cn(
+                "h-12 rounded-3xl text-sm font-black",
+                period === id ? "bg-leaf-600 text-white" : "text-market-ink/70",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-5 flex items-center justify-center gap-8 text-lg font-black">
+        <ChevronRight className="h-6 w-6" />
+        <span>الأحد، 25 مايو 2025</span>
+        <ChevronLeft className="h-6 w-6" />
+      </div>
+
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <ReportMetric label="مبيعات نقدية" value={formatCurrency(report.cashSalesTotal)} hint="0%" icon={Banknote} />
+        <ReportMetric label="إجمالي الربح" value={formatCurrency(report.stats.monthProfit)} hint="0%" icon={WalletCards} />
+        <ReportMetric label="إجمالي المبيعات" value={formatCurrency(report.stats.monthSales)} hint="0%" icon={TrendingUp} />
+        <ReportMetric label="مبيعات آجلة" value={formatCurrency(report.creditSalesTotal)} hint="0%" icon={CalendarDays} orange />
+        <ReportMetric label="المتبقي من الديون" value={formatCurrency(report.stats.totalDebt)} hint="0%" icon={BarChart3} orange wide />
       </section>
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-3">
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <WalletCards className="h-5 w-5 text-leaf-600" />
-            <h2 className="text-lg font-black">الأكثر مبيعاً</h2>
-          </div>
-          <div className="space-y-3">
-            {report.stats.topProducts.map((product) => (
-              <div key={product.name} className="flex items-center justify-between gap-3">
-                <span className="font-bold">{product.name}</span>
-                <span className="text-sm text-market-ink/60 dark:text-white/60">{formatNumber(product.quantity)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-leaf-600" />
-            <h2 className="text-lg font-black">الأعلى ربحاً</h2>
-          </div>
-          <div className="space-y-3">
-            {highestProfit.map((product) => (
-              <div key={product.id} className="flex items-center justify-between gap-3">
-                <span className="font-bold">{product.name}</span>
-                <span className="text-sm text-leaf-700 dark:text-leaf-200">{formatCurrency(product.profitPerUnit)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <TrendingDown className="h-5 w-5 text-orange-600" />
-            <h2 className="text-lg font-black">ضعيفة الربح</h2>
-          </div>
-          <div className="space-y-3">
-            {weakProfit.map((product) => (
-              <div key={product.id} className="flex items-center justify-between gap-3">
-                <span className="font-bold">{product.name}</span>
-                <span className="text-sm text-orange-700 dark:text-orange-200">{formatPercent(product.profitPercent)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </section>
-
-      <Card className="mt-6">
-        <h2 className="text-lg font-black">منتجات أوشكت على النفاد</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {lowStock.map((product) => (
-            <div key={product.id} className="rounded-lg border border-black/5 bg-white/58 p-3 dark:border-white/10 dark:bg-white/5">
-              <p className="font-black">{product.name}</p>
-              <p className="mt-1 text-sm text-market-ink/60 dark:text-white/60">
-                الكمية {formatNumber(product.quantity)} · التنبيه عند {formatNumber(product.lowStockAlert)}
-              </p>
+      <section className="ios-card mt-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-black">اتجاه الربح</h2>
+          <span className="ios-chip min-h-9 px-4">آخر 7 أيام</span>
+        </div>
+        <div className="flex h-48 items-end gap-3 border-b border-black/5 pb-4">
+          {bars.map((height, index) => (
+            <div key={index} className="flex flex-1 flex-col items-center gap-2">
+              <div className="w-full rounded-t-2xl bg-leaf-600/85" style={{ height: `${height}%` }} />
+              <span className="text-xs text-market-ink/50">مايو {19 + index}</span>
             </div>
           ))}
         </div>
-      </Card>
+      </section>
+
+      <section className="mt-5 grid grid-cols-2 gap-4">
+        <div className="ios-card">
+          <h2 className="text-lg font-black">أفضل الأقسام مبيعاً</h2>
+          <div className="mx-auto mt-4 flex h-32 w-32 items-center justify-center rounded-full border-[18px] border-leaf-600 border-l-orange-400 border-b-blue-500">
+            <div className="text-center">
+              <p className="text-sm font-black">{formatCurrency(report.stats.monthSales)}</p>
+              <p className="text-xs text-market-ink/50">إجمالي</p>
+            </div>
+          </div>
+        </div>
+        <div className="ios-card">
+          <h2 className="text-lg font-black">أعلى طرق الدفع</h2>
+          <div className="mt-6 space-y-5">
+            <div>
+              <div className="flex justify-between text-sm font-black"><span>نقدي</span><span>{cashPercent}%</span></div>
+              <div className="mt-2 h-3 rounded-full bg-black/5"><div className="h-3 rounded-full bg-leaf-600" style={{ width: `${cashPercent}%` }} /></div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm font-black"><span>آجل</span><span>{creditPercent}%</span></div>
+              <div className="mt-2 h-3 rounded-full bg-black/5"><div className="h-3 rounded-full bg-orange-400" style={{ width: `${creditPercent}%` }} /></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="ios-card mt-5">
+        <h2 className="text-xl font-black">تنبيهات المخزون المنخفض</h2>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {lowStock.slice(0, 3).map((product) => (
+            <div key={product.id} className="ios-card-tight text-center">
+              {product.imageUrl ? <img src={product.imageUrl} alt="" className="mx-auto h-14 w-14 object-contain" /> : null}
+              <p className="mt-2 line-clamp-1 text-sm font-bold">{product.name}</p>
+              <p className="text-lg font-black text-red-600">{product.quantity}</p>
+              <p className="text-xs text-red-600">منخفض</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="ios-card mt-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-black">المنتجات الأعلى ربحاً</h2>
+          <span className="text-sm font-bold text-leaf-700">عرض الكل</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {highestProfit.map((product, index) => (
+            <div key={product.id} className="ios-card-tight text-center">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-orange-50 text-sm font-black">{index + 1}</span>
+              {product.imageUrl ? <img src={product.imageUrl} alt="" className="mx-auto h-14 w-14 object-contain" /> : null}
+              <p className="mt-2 line-clamp-1 text-sm font-bold">{product.name}</p>
+              <p className="text-sm font-black text-leaf-700">{formatCurrency(product.profitPerUnit)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <ReportPrint store={data.store} title="تقرير الفترة" stats={report.stats} />
     </div>

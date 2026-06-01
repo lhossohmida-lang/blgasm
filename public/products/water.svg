@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 110">
+  <rect x="36" y="4" width="18" height="14" rx="3" fill="#1b9ee6"/>
+  <path d="M31 18h28l7 78c1 8-5 13-13 13H37c-8 0-14-5-13-13l7-78Z" fill="#e8f8ff" stroke="#cbe7f5"/>
+  <path d="M29 60c10-7 22 7 32 0l3 28c-8 6-29 6-38 0l3-28Z" fill="#75c7f0"/>
+  <text x="45" y="77" text-anchor="middle" font-size="10" font-family="Arial" font-weight="700" fill="#fff">ماء</text>
+</svg>

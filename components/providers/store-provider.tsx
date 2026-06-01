@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { flushSyncQueue } from "@/lib/firebase/offlineSync";
 import {
   createSyncOperation,
@@ -20,7 +21,6 @@ import {
   replaceLocalQueue,
   saveLocalAppData,
 } from "@/lib/offline/db";
-import { useOnlineStatus } from "@/hooks/use-online-status";
 import type {
   AppData,
   CreditCustomer,
@@ -99,10 +99,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const next = local ?? createInitialData(user.uid);
       if (!local) {
-        const op = createSyncOperation("store.upsert", next.store, next.store.id);
-        next.syncQueue = [op];
+        const op = user.isDemo ? null : createSyncOperation("store.upsert", next.store, next.store.id);
+        next.syncQueue = op ? [op] : [];
         await saveLocalAppData(next);
-        await enqueueLocalOperation(next.store.id, op);
+        if (op) {
+          await enqueueLocalOperation(next.store.id, op);
+        }
       }
 
       setData(next);
@@ -123,19 +125,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, [notify, user]);
 
-  const commit = useCallback(
-    async (nextData: AppData, operations: SyncOperation[] = []) => {
-      const next = stamp({
-        ...nextData,
-        syncQueue: [...nextData.syncQueue, ...operations],
-      });
+  const commit = useCallback(async (nextData: AppData, operations: SyncOperation[] = []) => {
+    const next = stamp({
+      ...nextData,
+      syncQueue: [...nextData.syncQueue, ...operations],
+    });
 
-      setData(next);
-      await saveLocalAppData(next);
-      await Promise.all(operations.map((operation) => enqueueLocalOperation(next.store.id, operation)));
-    },
-    [],
-  );
+    setData(next);
+    await saveLocalAppData(next);
+    await Promise.all(operations.map((operation) => enqueueLocalOperation(next.store.id, operation)));
+  }, []);
 
   const syncNow = useCallback(async () => {
     if (!data || !isOnline || user?.isDemo || syncingRef.current) {
@@ -261,7 +260,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const operations: SyncOperation[] = [
         createSyncOperation("sale.create", sale, sale.id),
         ...products
-          .filter((product) => data.products.some((oldProduct) => oldProduct.id === product.id && oldProduct.quantity !== product.quantity))
+          .filter((product) =>
+            data.products.some((oldProduct) => oldProduct.id === product.id && oldProduct.quantity !== product.quantity),
+          )
           .map((product) => createSyncOperation("product.upsert", product, product.id)),
       ];
 

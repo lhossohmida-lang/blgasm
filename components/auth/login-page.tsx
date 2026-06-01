@@ -1,9 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { KeyRound, LogIn, Mail, RefreshCcw, ShoppingBasket, Sparkles, UserPlus } from "lucide-react";
+import { ArrowLeft, EyeOff, Lock, Mail, RefreshCcw, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
@@ -16,6 +15,7 @@ export function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -59,86 +59,97 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-6xl gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-        <section className="space-y-5">
-          <div className="inline-flex items-center gap-2 rounded-lg border border-leaf-500/20 bg-white/65 px-3 py-2 text-sm font-bold text-leaf-700 shadow-soft dark:bg-white/10 dark:text-leaf-100">
-            <ShoppingBasket className="h-4 w-4" />
-            بلقاسم POS
-          </div>
-          <div>
-            <h1 className="max-w-3xl text-4xl font-black leading-tight text-market-ink dark:text-white sm:text-5xl">
-              إدارة محل المواد الغذائية من الهاتف أو الحاسوب، حتى بدون إنترنت.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-market-ink/68 dark:text-white/68">
-              مخزون، QR، بيع سالك، كريدي، تقارير أرباح، وتنبيهات ذكية في واجهة عربية سريعة.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {["Offline First", "QR Scanner", "Firebase Sync"].map((item) => (
-              <div key={item} className="soft-panel rounded-lg px-4 py-3 text-sm font-bold">
-                {item}
-              </div>
-            ))}
-          </div>
+    <main className="min-h-screen overflow-hidden px-5 pb-8 pt-8">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[460px] flex-col justify-end lg:max-w-6xl lg:grid lg:grid-cols-[1fr_470px] lg:items-center lg:gap-10">
+        <section className="hidden lg:block">
+          <img src="/storefront.svg" alt="متجر بلقاسم" className="mx-auto h-64 w-64 rounded-[42px] bg-white p-4 shadow-glass" />
+          <h1 className="mt-8 text-center text-6xl font-black text-leaf-700">بلقاسم</h1>
+          <p className="mt-4 text-center text-3xl font-black">إدارة متجرك بسهولة</p>
+          <p className="mx-auto mt-4 max-w-xl text-center text-lg leading-9 text-market-ink/65">
+            حل متكامل لإدارة المبيعات، المخزون، العملاء والكريدي من الهاتف والحاسوب.
+          </p>
         </section>
 
-        <Card className="mx-auto w-full max-w-md">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="rounded-lg bg-leaf-600 p-3 text-white">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black">{mode === "login" ? "تسجيل الدخول" : "إنشاء حساب جديد"}</h2>
-              <p className="text-sm text-market-ink/58 dark:text-white/58">كل تاجر يرى بيانات متجره فقط.</p>
-            </div>
+        <section className="relative">
+          <div className="pointer-events-none absolute inset-x-8 -top-48 h-72 rounded-full bg-leaf-100/70 blur-3xl lg:hidden" />
+          <div className="relative mb-8 text-center lg:hidden">
+            <img src="/storefront.svg" alt="متجر بلقاسم" className="mx-auto h-24 w-24 rounded-[28px] bg-white p-1 shadow-soft" />
+            <h1 className="mt-7 text-5xl font-black text-leaf-700">بلقاسم</h1>
+            <p className="mt-4 text-3xl font-black">إدارة متجرك بسهولة</p>
+            <p className="mt-4 text-base leading-8 text-market-ink/65">حل متكامل لإدارة المبيعات، المخزون والعملاء</p>
           </div>
 
-          <form className="space-y-4" onSubmit={submit}>
-            <Input
-              label="البريد الإلكتروني"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="merchant@example.com"
-              required
-            />
-            <Input
-              label="كلمة المرور"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••••"
-              minLength={6}
-              required
-            />
+          <div className="ios-card p-5">
+            <form className="space-y-4" onSubmit={submit}>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute right-4 top-[42px] h-5 w-5 text-leaf-700" />
+                <Input
+                  label="البريد الإلكتروني"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="ahmed@example.com"
+                  className="pr-12"
+                  required
+                />
+              </div>
 
-            <Button className="w-full" loading={loading}>
-              {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-              {mode === "login" ? "دخول" : "إنشاء الحساب"}
-            </Button>
-          </form>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute right-4 top-[42px] h-5 w-5 text-leaf-700" />
+                <EyeOff className="pointer-events-none absolute left-4 top-[42px] h-5 w-5 text-leaf-700" />
+                <Input
+                  label="كلمة المرور"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="كلمة المرور"
+                  className="px-12"
+                  minLength={6}
+                  required
+                />
+              </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-3 text-sm font-bold">
+                <button type="button" className="text-leaf-700" onClick={handleReset}>
+                  نسيت كلمة المرور؟
+                </button>
+                <label className="flex items-center gap-2 text-market-ink/70">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(event) => setRemember(event.target.checked)}
+                    className="h-5 w-5 rounded border-black/10 accent-leaf-600"
+                  />
+                  تذكرني
+                </label>
+              </div>
+
+              <Button className="h-16 w-full rounded-3xl text-xl" loading={loading}>
+                {mode === "login" ? "تسجيل الدخول" : "إنشاء الحساب"}
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </form>
+
             <Button
               type="button"
               variant="secondary"
+              className="mt-4 h-14 w-full rounded-3xl text-lg text-leaf-700"
               onClick={() => setMode((current) => (current === "login" ? "register" : "login"))}
             >
-              {mode === "login" ? <UserPlus className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
-              {mode === "login" ? "حساب جديد" : "لدي حساب"}
+              <UserPlus className="h-5 w-5" />
+              {mode === "login" ? "إنشاء حساب" : "لدي حساب"}
             </Button>
-            <Button type="button" variant="secondary" onClick={handleReset}>
-              <Mail className="h-4 w-4" />
-              نسيت كلمة المرور
+
+            <Button type="button" variant="ghost" className="mt-3 w-full text-leaf-700" onClick={enterDemoMode}>
+              <RefreshCcw className="h-4 w-4" />
+              تجربة محلية بدون حساب
             </Button>
           </div>
 
-          <Button type="button" variant="ghost" className="mt-3 w-full" onClick={enterDemoMode}>
-            <RefreshCcw className="h-4 w-4" />
-            تجربة محلية بدون حساب
-          </Button>
-        </Card>
+          <p className="mt-6 text-center text-xs leading-6 text-market-ink/55">
+            بالتسجيل، أنت توافق على الشروط والأحكام وسياسة الخصوصية
+          </p>
+        </section>
       </div>
     </main>
   );

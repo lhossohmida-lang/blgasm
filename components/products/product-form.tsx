@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Save } from "lucide-react";
+import { Bell, Boxes, Calculator, Grid2X2, Percent, QrCode, Save, Tag, TrendingUp, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { useStore } from "@/components/providers/store-provider";
 import type { Product, ProductDraft } from "@/types";
 import { calculateProductPricing } from "@/utils/calculations";
@@ -38,6 +38,28 @@ function toDraft(product?: Product, qrCode?: string): ProductDraft {
     lowStockAlert: product.lowStockAlert,
     imageUrl: product.imageUrl,
   };
+}
+
+function CalcCard({
+  label,
+  value,
+  icon: Icon,
+  orange,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Calculator;
+  orange?: boolean;
+}) {
+  return (
+    <div className="ios-card-tight">
+      <div className={orange ? "ios-icon ios-icon-orange" : "ios-icon"}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="mt-3 text-sm font-bold text-market-ink/65 dark:text-white/65">{label}</p>
+      <p className="mt-1 text-xl font-black">{value}</p>
+    </div>
+  );
 }
 
 export function ProductForm({
@@ -88,35 +110,44 @@ export function ProductForm({
 
   return (
     <form className="space-y-5" onSubmit={submit}>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="ios-card space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="relative">
+            <Tag className="pointer-events-none absolute left-4 top-[42px] h-5 w-5 text-leaf-700" />
+            <Input
+              label="اسم المنتج"
+              value={draft.name}
+              onChange={(event) => update("name", event.target.value)}
+              placeholder="أدخل اسم المنتج"
+              required
+            />
+          </div>
+          <div className="relative">
+            <Grid2X2 className="pointer-events-none absolute left-4 top-[42px] h-5 w-5 text-leaf-700" />
+            <Select label="الفئة / التصنيف" value={draft.category} onChange={(event) => update("category", event.target.value)}>
+              <option>مواد غذائية</option>
+              <option>مشروبات</option>
+              <option>زيوت</option>
+              <option>حلويات</option>
+              <option>تنظيف</option>
+            </Select>
+          </div>
+          <div className="relative md:col-span-2">
+            <QrCode className="pointer-events-none absolute left-4 top-[42px] h-5 w-5 text-leaf-700" />
+            <Input
+              label="QR المنتج"
+              value={draft.qrCode}
+              onChange={(event) => update("qrCode", event.target.value)}
+              placeholder="أدخل أو امسح QR للمنتج"
+              required
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
         <Input
-          label="QR Code"
-          value={draft.qrCode}
-          onChange={(event) => update("qrCode", event.target.value)}
-          placeholder="613..."
-          required
-        />
-        <Input
-          label="اسم المنتج"
-          value={draft.name}
-          onChange={(event) => update("name", event.target.value)}
-          placeholder="مثال: حليب 1 لتر"
-          required
-        />
-        <Input
-          label="التصنيف"
-          value={draft.category}
-          onChange={(event) => update("category", event.target.value)}
-          placeholder="مواد أساسية"
-        />
-        <Input
-          label="صورة المنتج اختيارية"
-          value={draft.imageUrl ?? ""}
-          onChange={(event) => update("imageUrl", event.target.value)}
-          placeholder="https://..."
-        />
-        <Input
-          label="سعر الجملة"
+          label="سعر الجملة (الكرتون)"
           type="number"
           min="0"
           value={draft.wholesalePrice}
@@ -124,7 +155,7 @@ export function ProductForm({
           required
         />
         <Input
-          label="عدد القطع في الجملة/الكرتون"
+          label="عدد الوحدات في الكرتون"
           type="number"
           min="1"
           value={draft.unitsPerWholesale}
@@ -132,7 +163,12 @@ export function ProductForm({
           required
         />
         <Input
-          label="سعر البيع للقطعة"
+          label="تكلفة الوحدة"
+          value={pricing.unitCost}
+          readOnly
+        />
+        <Input
+          label="سعر البيع (الوحدة)"
           type="number"
           min="0"
           value={draft.sellPrice}
@@ -148,7 +184,7 @@ export function ProductForm({
           required
         />
         <Input
-          label="الكمية المنخفضة للتنبيه"
+          label="تنبيه المخزون المنخفض"
           type="number"
           min="0"
           value={draft.lowStockAlert}
@@ -156,29 +192,35 @@ export function ProductForm({
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <div className="metric-card">
-          <p className="text-xs font-bold text-market-ink/55 dark:text-white/55">تكلفة القطعة</p>
-          <p className="mt-2 text-lg font-black">{formatCurrency(pricing.unitCost)}</p>
-        </div>
-        <div className="metric-card">
-          <p className="text-xs font-bold text-market-ink/55 dark:text-white/55">ربح القطعة</p>
-          <p className="mt-2 text-lg font-black">{formatCurrency(pricing.profitPerUnit)}</p>
-        </div>
-        <div className="metric-card">
-          <p className="text-xs font-bold text-market-ink/55 dark:text-white/55">نسبة الربح</p>
-          <p className="mt-2 text-lg font-black">{formatPercent(pricing.profitPercent)}</p>
-        </div>
-        <div className="metric-card">
-          <p className="text-xs font-bold text-market-ink/55 dark:text-white/55">فائدة المخزون</p>
-          <p className="mt-2 text-lg font-black">{formatCurrency(pricing.expectedStockProfit)}</p>
-        </div>
+      <Input
+        label="صورة المنتج اختيارية"
+        value={draft.imageUrl ?? ""}
+        onChange={(event) => update("imageUrl", event.target.value)}
+        placeholder="/products/milk.svg أو رابط صورة"
+      />
+
+      <div className="grid grid-cols-3 gap-3">
+        <CalcCard label="الربح للوحدة" value={formatCurrency(pricing.profitPerUnit)} icon={TrendingUp} />
+        <CalcCard label="نسبة الربح" value={formatPercent(pricing.profitPercent)} icon={Percent} />
+        <CalcCard label="الربح المتوقع" value={formatCurrency(pricing.expectedStockProfit)} icon={Wallet} orange />
       </div>
 
-      <Button loading={saving}>
-        <Save className="h-4 w-4" />
-        حفظ المنتج
-      </Button>
+      <div className="grid gap-3">
+        <Button className="h-16 w-full rounded-3xl text-xl" loading={saving}>
+          <Save className="h-6 w-6" />
+          حفظ المنتج
+        </Button>
+        <Button type="button" variant="secondary" className="h-14 w-full rounded-3xl text-lg text-leaf-700">
+          <QrCode className="h-5 w-5" />
+          توليد QR
+        </Button>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 rounded-full bg-leaf-50 px-4 py-3 text-sm font-bold text-market-ink/60">
+        <Bell className="h-4 w-4" />
+        سيتم حفظ المنتج وإضافته إلى المخزون بعد تأكيد البيانات
+        <Boxes className="h-4 w-4" />
+      </div>
     </form>
   );
 }

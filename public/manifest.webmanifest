@@ -10,9 +10,9 @@
   "lang": "ar-DZ",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/blgasm-logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

@@ -3,17 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
+  Bell,
   Bot,
+  Box,
   Boxes,
-  ChartNoAxesCombined,
-  CircleDollarSign,
-  LayoutDashboard,
+  Home,
   LogOut,
   Moon,
   PackagePlus,
-  ReceiptText,
   RefreshCcw,
+  Settings,
+  ShoppingCart,
   Sun,
+  UserRound,
+  UsersRound,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -25,14 +29,22 @@ import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/utils/cn";
 
-const nav = [
-  { href: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
+const desktopNav = [
+  { href: "/dashboard", label: "لوحة التحكم", icon: Home },
   { href: "/inventory", label: "المخزون", icon: Boxes },
-  { href: "/products/new", label: "إدخال منتج", icon: PackagePlus },
-  { href: "/pos", label: "البيع", icon: ReceiptText },
-  { href: "/credits", label: "الكريديات", icon: CircleDollarSign },
-  { href: "/reports", label: "التقارير", icon: ChartNoAxesCombined },
+  { href: "/products/new", label: "إدخال منتج جديد", icon: PackagePlus },
+  { href: "/pos", label: "المبيعات", icon: ShoppingCart },
+  { href: "/credits", label: "الكريديات", icon: UsersRound },
+  { href: "/reports", label: "التقارير", icon: BarChart3 },
   { href: "/ai", label: "الذكاء الاصطناعي", icon: Bot },
+];
+
+const bottomNav = [
+  { href: "/dashboard", label: "الرئيسية", icon: Home },
+  { href: "/inventory", label: "المخزون", icon: Box },
+  { href: "/pos", label: "البيع", icon: ShoppingCart },
+  { href: "/credits", label: "الكريدي", icon: UserRound },
+  { href: "/reports", label: "التقارير", icon: BarChart3 },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -43,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("blgasm-theme");
-    const shouldDark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const shouldDark = stored ? stored === "dark" : false;
     setDark(shouldDark);
     document.documentElement.classList.toggle("dark", shouldDark);
   }, []);
@@ -69,19 +81,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <aside className="no-print fixed inset-y-0 right-0 z-30 hidden w-72 border-l border-black/5 bg-white/70 p-4 shadow-soft backdrop-blur-xl dark:border-white/10 dark:bg-market-ink/72 lg:block">
-        <Link href="/dashboard" className="mb-6 flex items-center gap-3 rounded-lg px-2 py-3">
-          <div className="rounded-lg bg-leaf-600 p-2 text-white">
-            <Boxes className="h-6 w-6" />
-          </div>
+      <aside className="desktop-sidebar no-print fixed inset-y-0 right-0 z-30 hidden w-72 p-5 text-white shadow-2xl lg:block">
+        <Link href="/dashboard" className="mb-8 flex items-center gap-3">
+          <img src="/blgasm-logo.png" alt="متجر بلقاسم" className="h-12 w-12 rounded-2xl border-2 border-white/70 bg-white" />
           <div>
-            <p className="text-lg font-black">بلقاسم POS</p>
-            <p className="text-xs text-market-ink/55 dark:text-white/55">{data.store.name}</p>
+            <p className="text-lg font-black">بلقاسم</p>
+            <p className="text-xs text-white/55">مدير المتجر</p>
           </div>
         </Link>
 
         <nav className="space-y-1">
-          {nav.map((item) => {
+          {desktopNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             return (
@@ -92,22 +102,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+
+        <div className="absolute inset-x-5 bottom-5 space-y-2">
+          <Button variant="secondary" className="w-full border-white/10 bg-white/10 text-white hover:bg-white/15" onClick={toggleTheme}>
+            {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            تبديل الوضع
+          </Button>
+          <Button variant="secondary" className="w-full border-white/10 bg-white/10 text-white hover:bg-white/15" onClick={logout}>
+            <LogOut className="h-4 w-4" />
+            تسجيل الخروج
+          </Button>
+        </div>
       </aside>
 
-      <div className="lg:pr-72">
-        <header className="no-print sticky top-0 z-20 border-b border-black/5 bg-white/62 px-4 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-market-ink/64">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+      <div className="desktop-shell">
+        <header className="no-print sticky top-0 z-20 hidden border-b border-black/5 bg-white/80 px-6 py-3 backdrop-blur-2xl dark:border-white/10 dark:bg-market-ink/80 lg:block">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <img src="/blgasm-logo.png" alt="" className="h-10 w-10 rounded-2xl border border-black/5 bg-white" />
+              <div>
+                <p className="font-black">{data.store.name}</p>
+                <p className="text-xs text-market-ink/55 dark:text-white/55">{user.email}</p>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <div
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold",
+                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold shadow-soft",
                   isOnline
-                    ? "bg-leaf-100 text-leaf-700 dark:bg-leaf-500/20 dark:text-leaf-50"
-                    : "bg-citrus-100 text-amber-900 dark:bg-citrus-500/20 dark:text-citrus-100",
+                    ? "bg-leaf-50 text-leaf-700 dark:bg-leaf-500/20 dark:text-leaf-50"
+                    : "bg-orange-50 text-orange-700 dark:bg-orange-500/20 dark:text-orange-50",
                 )}
               >
                 {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                {isOnline ? "متصل" : "أنت تعمل بدون إنترنت"}
+                {isOnline ? "متزامن الآن" : "بدون إنترنت"}
               </div>
               {pendingSyncCount ? (
                 <Button variant="secondary" onClick={syncNow} title="مزامنة الآن">
@@ -115,35 +143,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {pendingSyncCount}
                 </Button>
               ) : null}
-            </div>
-
-            <nav className="flex gap-1 overflow-x-auto lg:hidden">
-              {nav.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    className={cn(
-                      "rounded-lg p-2 text-market-ink/65 transition hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
-                      active && "bg-leaf-600 text-white dark:bg-leaf-500 dark:text-market-ink",
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="flex items-center gap-2">
               <Button variant="secondary" onClick={toggleTheme} title="تبديل الوضع">
                 {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
-              <Button variant="secondary" onClick={logout} title="تسجيل الخروج">
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">خروج</span>
+              <Button variant="secondary" title="التنبيهات">
+                <Bell className="h-4 w-4" />
+              </Button>
+              <Button variant="secondary" title="الإعدادات">
+                <Settings className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -151,6 +158,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
+
+      <nav className="ios-bottom-nav no-print">
+        {bottomNav.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const Icon = item.icon;
+          return (
+            <Link key={item.href} href={item.href} className={cn("ios-bottom-link", active && "ios-bottom-link-active")}>
+              <Icon className="h-6 w-6" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

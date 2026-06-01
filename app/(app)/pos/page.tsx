@@ -1,37 +1,33 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Camera, Minus, Plus, Printer, ReceiptText, ScanLine, Search, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input, Select } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
-import { QrCameraScanner } from "@/components/scanner/qr-camera-scanner";
+import { Banknote, Minus, Plus, QrCode, ReceiptText, Trash2, UserPlus } from "lucide-react";
 import { KeyboardScanner } from "@/components/scanner/keyboard-scanner";
 import { Receipt } from "@/components/print/receipt";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 import { useStore } from "@/components/providers/store-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import type { Sale, SaleItem, SaleType } from "@/types";
 import { buildSaleItem, calculateSaleTotals } from "@/utils/calculations";
 import { cn } from "@/utils/cn";
-import { formatCurrency, formatNumber } from "@/utils/format";
+import { formatCurrency } from "@/utils/format";
 
 export default function PosPage() {
   const { data, findProductByCode, createSale, upsertCustomer } = useStore();
   const { notify } = useToast();
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [qr, setQr] = useState("");
-  const [showCamera, setShowCamera] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
   const [saleType, setSaleType] = useState<SaleType>("cash");
   const [customerId, setCustomerId] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const totals = useMemo(() => calculateSaleTotals(cart), [cart]);
+  const remaining = Math.max(0, totals.totalAmount - paidAmount);
 
   function addByCode(code: string) {
     const product = findProductByCode(code);
@@ -42,9 +38,7 @@ export default function PosPage() {
     setCart((current) => {
       const existing = current.find((item) => item.productId === product.id);
       if (existing) {
-        return current.map((item) =>
-          item.productId === product.id ? buildSaleItem(product, item.quantity + 1) : item,
-        );
+        return current.map((item) => (item.productId === product.id ? buildSaleItem(product, item.quantity + 1) : item));
       }
       return [buildSaleItem(product, 1), ...current];
     });
@@ -53,19 +47,14 @@ export default function PosPage() {
 
   function updateQty(productId: string, quantity: number) {
     const product = data?.products.find((item) => item.id === productId);
-    if (!product) {
-      return;
-    }
+    if (!product) return;
     setCart((current) =>
       current.map((item) => (item.productId === productId ? buildSaleItem(product, Math.max(1, quantity)) : item)),
     );
   }
 
   async function completeSale() {
-    if (!data) {
-      return;
-    }
-
+    if (!data) return;
     setSubmitting(true);
     try {
       let selectedCustomerId = customerId;
@@ -75,7 +64,6 @@ export default function PosPage() {
         const customer = await upsertCustomer({ name: newCustomerName });
         selectedCustomerId = customer.id;
         selectedCustomerName = customer.name;
-        setCustomerId(customer.id);
       }
 
       const sale = await createSale({
@@ -83,237 +71,220 @@ export default function PosPage() {
         items: totals.items,
         customerId: selectedCustomerId || undefined,
         customerName: selectedCustomerName,
-        paidAmount,
+        paidAmount: saleType === "cash" ? totals.totalAmount : paidAmount,
       });
       setLastSale(sale);
       setCart([]);
       setPaidAmount(0);
       setNewCustomerName("");
     } catch (error) {
-      notify({
-        tone: "error",
-        title: "تعذر إتمام البيع",
-        body: error instanceof Error ? error.message : undefined,
-      });
+      notify({ tone: "error", title: "تعذر إتمام البيع", body: error instanceof Error ? error.message : undefined });
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (!data) {
-    return null;
-  }
+  if (!data) return null;
 
   return (
-    <div>
-      <PageHeader icon={ReceiptText} title="صفحة البيع" description="POS سريع للبيع السالك والكريدي مع QR وإيصال للطباعة." />
+    <div className="ios-page">
+      <div className="ios-topbar">
+        <img src="/storefront.svg" alt="" className="ios-avatar" />
+        <div className="flex-1 pt-2">
+          <h1 className="ios-title">البيع</h1>
+        </div>
+        <button className="ios-circle-button" title="تنبيهات">
+          <QrCode className="h-5 w-5" />
+        </button>
+      </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="mb-6 hidden lg:block">
+        <h1 className="text-3xl font-black">البيع</h1>
+        <p className="mt-1 text-market-ink/60">نقطة بيع سريعة للسالك والكريدي.</p>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_420px]">
         <section className="space-y-5">
-          <Card>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-              <Input
-                label="خانة مسح QR"
-                value={qr}
-                onChange={(event) => setQr(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addByCode(qr);
-                  }
-                }}
-                placeholder="امسح أو اكتب QR"
-              />
-              <div className="flex items-end gap-2">
-                <Button type="button" onClick={() => addByCode(qr)}>
-                  <Search className="h-4 w-4" />
-                  إضافة
-                </Button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" onClick={() => setShowCamera((value) => !value)}>
-                <Camera className="h-4 w-4" />
-                فتح الكاميرا
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setShowScanner((value) => !value)}>
-                <ScanLine className="h-4 w-4" />
-                وضع الماسح
-              </Button>
-            </div>
-            {showCamera ? (
-              <div className="mt-4">
-                <QrCameraScanner onScan={addByCode} />
-              </div>
-            ) : null}
-            {showScanner ? (
-              <div className="mt-4">
-                <KeyboardScanner onScan={addByCode} />
-              </div>
-            ) : null}
-          </Card>
+          <div className="ios-search">
+            <QrCode className="h-7 w-7 text-leaf-700" />
+            <input
+              value={qr}
+              onChange={(event) => setQr(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") addByCode(qr);
+              }}
+              placeholder="امسح أو أدخل باركود المنتج"
+              className="min-w-0 flex-1 bg-transparent text-base outline-none"
+            />
+            <button onClick={() => addByCode(qr)} className="text-sm font-black text-leaf-700">إضافة</button>
+          </div>
 
-          <Card>
-            <h2 className="text-lg font-black">منتجات سريعة</h2>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {data.products.slice(0, 8).map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => addByCode(product.qrCode)}
-                  className="rounded-lg border border-black/8 bg-white/60 p-3 text-right transition hover:bg-white dark:border-white/10 dark:bg-white/6 dark:hover:bg-white/12"
-                >
-                  <p className="font-bold">{product.name}</p>
-                  <p className="mt-1 text-xs text-market-ink/55 dark:text-white/55">
-                    {formatCurrency(product.sellPrice)} · {formatNumber(product.quantity)} قطعة
-                  </p>
-                </button>
-              ))}
-            </div>
-          </Card>
-        </section>
+          <div className="ios-card-tight grid grid-cols-2 gap-2 p-2">
+            {(["cash", "credit"] as SaleType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSaleType(type)}
+                className={cn(
+                  "h-16 rounded-3xl text-lg font-black transition",
+                  saleType === type ? "bg-leaf-50 text-leaf-700 shadow-soft" : "text-market-ink/70",
+                )}
+              >
+                {type === "cash" ? "بيع سالك" : "بيع كريدي"}
+              </button>
+            ))}
+          </div>
 
-        <section className="space-y-5">
-          <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black">الفاتورة</h2>
-              <div className="flex gap-2">
-                {(["cash", "credit"] as SaleType[]).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setSaleType(type)}
-                    className={cn(
-                      "rounded-lg px-4 py-2 text-sm font-black transition",
-                      saleType === type
-                        ? "bg-leaf-600 text-white dark:bg-leaf-400 dark:text-market-ink"
-                        : "bg-white/70 text-market-ink/66 dark:bg-white/8 dark:text-white/66",
-                    )}
-                  >
-                    {type === "cash" ? "بيع سالك" : "بيع كريدي"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {cart.length ? (
-              <div className="space-y-3">
-                {totals.items.map((item) => (
-                  <div
-                    key={item.productId}
-                    className="rounded-lg border border-black/5 bg-white/58 p-3 dark:border-white/10 dark:bg-white/5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-black">{item.name}</p>
-                        <p className="text-xs text-market-ink/55 dark:text-white/55">{formatCurrency(item.unitPrice)} للقطعة</p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setCart((current) => current.filter((cartItem) => cartItem.productId !== item.productId))}
-                        title="حذف من الفاتورة"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Button type="button" variant="secondary" onClick={() => updateQty(item.productId, item.quantity - 1)}>
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <Input
-                          aria-label="الكمية"
-                          className="w-20 text-center"
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(event) => updateQty(item.productId, Number(event.target.value))}
-                        />
-                        <Button type="button" variant="secondary" onClick={() => updateQty(item.productId, item.quantity + 1)}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="text-left">
-                        <p className="font-black">{formatCurrency(item.total)}</p>
-                        <p className="text-xs text-leaf-700 dark:text-leaf-200">ربح {formatCurrency(item.profit)}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon={ReceiptText} title="الفاتورة فارغة" body="امسح QR أو اختر منتجاً سريعاً لإضافة عناصر." />
-            )}
-
-            {saleType === "credit" ? (
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
-                <Select label="حساب كريدي" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-                  <option value="">اختر زبوناً</option>
+          {saleType === "credit" ? (
+            <div className="space-y-3">
+              <p className="text-xl font-black">العميل</p>
+              <div className="grid grid-cols-[1fr_150px] gap-3">
+                <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+                  <option value="">اختر العميل</option>
                   {data.creditCustomers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} - {formatCurrency(customer.remainingDebt)}
-                    </option>
+                    <option key={customer.id} value={customer.id}>{customer.name}</option>
                   ))}
                 </Select>
-                <Input
-                  label="إنشاء زبون جديد"
-                  value={newCustomerName}
-                  onChange={(event) => setNewCustomerName(event.target.value)}
-                  placeholder="اسم الزبون"
-                />
-                <Input
-                  label="دفعة مباشرة اختيارية"
-                  type="number"
-                  min="0"
-                  value={paidAmount}
-                  onChange={(event) => setPaidAmount(Number(event.target.value))}
-                />
-              </div>
-            ) : null}
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="metric-card">
-                <p className="text-xs text-market-ink/55 dark:text-white/55">إجمالي الفاتورة</p>
-                <p className="mt-2 text-xl font-black">{formatCurrency(totals.totalAmount)}</p>
-              </div>
-              <div className="metric-card">
-                <p className="text-xs text-market-ink/55 dark:text-white/55">ربح الفاتورة</p>
-                <p className="mt-2 text-xl font-black">{formatCurrency(totals.totalProfit)}</p>
-              </div>
-              <div className="metric-card">
-                <p className="text-xs text-market-ink/55 dark:text-white/55">عدد المنتجات</p>
-                <p className="mt-2 text-xl font-black">{formatNumber(totals.items.length)}</p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setCart([])} disabled={!cart.length}>
-                <Trash2 className="h-4 w-4" />
-                تفريغ
-              </Button>
-              <Button type="button" onClick={completeSale} disabled={!cart.length} loading={submitting}>
-                <ReceiptText className="h-4 w-4" />
-                إتمام البيع
-              </Button>
-              {lastSale ? (
-                <Button type="button" variant="secondary" onClick={() => window.print()}>
-                  <Printer className="h-4 w-4" />
-                  طباعة الوصل
+                <Button variant="secondary">
+                  <UserPlus className="h-5 w-5" />
+                  عميل جديد
                 </Button>
-              ) : null}
+              </div>
+              <Input
+                value={newCustomerName}
+                onChange={(event) => setNewCustomerName(event.target.value)}
+                placeholder="أو اكتب اسم عميل جديد"
+              />
             </div>
-          </Card>
+          ) : null}
+
+          <div className="ios-card overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-black/5 px-4 py-4">
+              <button className="text-red-600" onClick={() => setCart([])} title="تفريغ">
+                <Trash2 className="h-5 w-5" />
+              </button>
+              <h2 className="flex items-center gap-2 text-xl font-black">
+                قائمة المنتجات
+                <span className="rounded-full bg-leaf-50 px-3 py-1 text-base text-leaf-700">{cart.length}</span>
+              </h2>
+            </div>
+
+            {totals.items.length ? (
+              <div className="divide-y divide-black/5">
+                {totals.items.map((item) => {
+                  const product = data.products.find((candidate) => candidate.id === item.productId);
+                  return (
+                    <div key={item.productId} className="grid grid-cols-[1fr_116px] gap-3 px-4 py-4">
+                      <div className="flex gap-3">
+                        {product?.imageUrl ? <img src={product.imageUrl} alt="" className="h-20 w-16 object-contain" /> : <ReceiptText className="h-12 w-12 text-leaf-600" />}
+                        <div>
+                          <p className="text-lg font-black">{item.name}</p>
+                          <p className="text-sm text-market-ink/55">#{item.qrCode.slice(-4)}</p>
+                          <p className="mt-1 text-sm font-bold text-leaf-700">ربح الوحدة: {formatCurrency(item.unitPrice - item.unitCost)}</p>
+                        </div>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xl font-black">{formatCurrency(item.total)}</p>
+                        <p className="text-sm text-market-ink/55">{formatCurrency(item.unitPrice)} للوحدة</p>
+                        <div className="mt-3 inline-flex items-center rounded-2xl border border-black/10 bg-white">
+                          <button className="p-2" onClick={() => updateQty(item.productId, item.quantity - 1)}><Minus className="h-4 w-4" /></button>
+                          <span className="min-w-10 text-center font-black">{item.quantity}</span>
+                          <button className="p-2" onClick={() => updateQty(item.productId, item.quantity + 1)}><Plus className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-5 py-10 text-center text-market-ink/55">امسح منتجاً أو اختر من المنتجات السريعة</div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {data.products.slice(0, 6).map((product) => (
+              <button key={product.id} onClick={() => addByCode(product.qrCode)} className="ios-card-tight text-center">
+                {product.imageUrl ? <img src={product.imageUrl} alt="" className="mx-auto h-14 w-14 object-contain" /> : null}
+                <p className="mt-2 line-clamp-1 text-sm font-bold">{product.name}</p>
+              </button>
+            ))}
+          </div>
+
+          <Button variant="secondary" className="w-full" onClick={() => setShowScanner((value) => !value)}>
+            <QrCode className="h-4 w-4" />
+            {showScanner ? "إخفاء وضع الماسح" : "اختبار الماسح"}
+          </Button>
+          {showScanner ? <KeyboardScanner onScan={addByCode} /> : null}
+        </section>
+
+        <aside className="space-y-4">
+          <div className="ios-card bg-leaf-50/45">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-market-ink/60">إجمالي المنتجات</p>
+                <p className="mt-1 text-2xl font-black">{formatCurrency(totals.totalAmount)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-market-ink/60">إجمالي الربح</p>
+                <p className="mt-1 text-2xl font-black text-leaf-700">{formatCurrency(totals.totalProfit)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-market-ink/60">المبلغ المدفوع</p>
+                <p className="mt-1 text-2xl font-black">{formatCurrency(saleType === "cash" ? totals.totalAmount : paidAmount)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-market-ink/60">المتبقي</p>
+                <p className="mt-1 text-2xl font-black text-red-600">{formatCurrency(saleType === "cash" ? 0 : remaining)}</p>
+              </div>
+            </div>
+          </div>
+
+          {saleType === "credit" ? (
+            <div className="ios-card-tight">
+              <Input
+                label="المبلغ المدفوع"
+                type="number"
+                value={paidAmount}
+                onChange={(event) => setPaidAmount(Number(event.target.value))}
+              />
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[20, 50, 100].map((value) => (
+                  <button key={value} className="ios-chip min-h-10 px-2" onClick={() => setPaidAmount((current) => current + value)}>
+                    +{value}
+                  </button>
+                ))}
+                <button className="ios-chip ios-chip-active min-h-10 px-2" onClick={() => setPaidAmount(totals.totalAmount)}>
+                  الكل
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="ios-card-tight flex items-center gap-3">
+              <div className="ios-icon">
+                <Banknote className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="font-black">الدفع نقدي</p>
+                <p className="text-sm text-market-ink/55">سيتم قبض كامل الفاتورة</p>
+              </div>
+            </div>
+          )}
+
+          <Button className="h-16 w-full rounded-3xl text-xl" onClick={completeSale} disabled={!cart.length} loading={submitting}>
+            <ReceiptText className="h-6 w-6" />
+            إتمام البيع
+          </Button>
 
           {lastSale ? (
-            <Card>
-              <h2 className="text-lg font-black">آخر وصل</h2>
-              <p className="mt-2 text-sm text-market-ink/62 dark:text-white/62">
-                {lastSale.receiptNumber} · {formatCurrency(lastSale.totalAmount)} · ربح {formatCurrency(lastSale.totalProfit)}
-              </p>
-            </Card>
+            <div className="ios-card-tight">
+              <p className="font-black">آخر وصل</p>
+              <p className="mt-1 text-sm text-market-ink/60">{lastSale.receiptNumber} - {formatCurrency(lastSale.totalAmount)}</p>
+              <Button variant="secondary" className="mt-3 w-full" onClick={() => window.print()}>
+                طباعة الوصل
+              </Button>
+            </div>
           ) : null}
-        </section>
+        </aside>
       </div>
 
       {lastSale ? <Receipt sale={lastSale} store={data.store} /> : null}

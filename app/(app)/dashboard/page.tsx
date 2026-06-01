@@ -1,49 +1,62 @@
 "use client";
 
+import Link from "next/link";
 import {
-  AlertTriangle,
-  Boxes,
-  ChartNoAxesCombined,
-  CircleDollarSign,
-  PackageCheck,
+  ArrowLeft,
+  Bell,
+  Box,
+  CalendarDays,
+  CheckCircle2,
+  Package,
   ReceiptText,
+  ShoppingBag,
   TrendingUp,
-  WalletCards,
+  Wallet,
+  Wifi,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
 import { useStore } from "@/components/providers/store-provider";
 import { buildSmartAlerts } from "@/utils/alerts";
-import { formatCurrency, formatDate, formatNumber, formatPercent } from "@/utils/format";
+import { formatCurrency, formatNumber } from "@/utils/format";
 
-function Metric({
-  label,
+function HeroMetric({
+  title,
   value,
+  hint,
   icon: Icon,
-  accent = "leaf",
+  tone = "green",
 }: {
-  label: string;
+  title: string;
   value: string;
+  hint: string;
   icon: typeof TrendingUp;
-  accent?: "leaf" | "orange" | "yellow" | "sky";
+  tone?: "green" | "orange" | "red";
 }) {
-  const colors = {
-    leaf: "bg-leaf-100 text-leaf-700 dark:bg-leaf-500/20 dark:text-leaf-50",
-    orange: "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-50",
-    yellow: "bg-citrus-100 text-amber-900 dark:bg-citrus-500/20 dark:text-citrus-100",
-    sky: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-50",
-  };
+  const iconClass =
+    tone === "orange" ? "ios-icon ios-icon-orange" : tone === "red" ? "ios-icon ios-icon-red" : "ios-icon";
 
   return (
-    <div className="metric-card">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-market-ink/58 dark:text-white/58">{label}</p>
-        <div className={`rounded-lg p-2 ${colors[accent]}`}>
-          <Icon className="h-5 w-5" />
-        </div>
+    <div className="ios-card min-h-[152px]">
+      <div className={iconClass}>
+        <Icon className="h-6 w-6" />
       </div>
-      <p className="mt-3 text-2xl font-black">{value}</p>
+      <p className="mt-5 text-sm font-semibold text-market-ink/70 dark:text-white/70">{title}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-2 text-sm font-bold text-leaf-700 dark:text-leaf-200">{hint}</p>
+    </div>
+  );
+}
+
+function ProductMini({ name, value, image, rank }: { name: string; value: string; image?: string; rank: number }) {
+  return (
+    <div className="ios-card-tight min-w-0">
+      <div className="flex items-start justify-between gap-2">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-orange-50 text-sm font-black text-orange-700">
+          {rank}
+        </span>
+        {image ? <img src={image} alt="" className="h-16 w-16 object-contain" /> : <Box className="h-12 w-12 text-leaf-600" />}
+      </div>
+      <p className="mt-2 truncate text-sm font-bold">{name}</p>
+      <p className="mt-1 text-sm font-black text-leaf-700">{value}</p>
     </div>
   );
 }
@@ -55,119 +68,119 @@ export default function DashboardPage() {
     return null;
   }
 
-  const alerts = buildSmartAlerts(data, isOnline).slice(0, 6);
-  const recentSales = data.sales.slice(0, 5);
+  const alerts = buildSmartAlerts(data, isOnline);
+  const lowStock = data.products.filter((product) => product.quantity <= product.lowStockAlert).slice(0, 1);
+  const recentSales = data.sales.slice(0, 3);
+  const topProducts = stats.topProducts.length
+    ? stats.topProducts
+    : data.products.slice(0, 3).map((product) => ({ name: product.name, quantity: product.quantity, total: product.sellPrice }));
 
   return (
-    <div>
-      <PageHeader
-        icon={ChartNoAxesCombined}
-        title="لوحة التحكم"
-        description="نظرة سريعة على المبيعات، الأرباح، المخزون، والكريديات."
-      />
+    <div className="ios-page">
+      <div className="ios-topbar">
+        <img src="/storefront.svg" alt="متجر بلقاسم" className="ios-avatar" />
+        <div className="min-w-0 flex-1 pt-2 text-center">
+          <h1 className="text-4xl font-black leading-tight">
+            مرحباً <span className="text-leaf-700">بلقاسم</span>
+          </h1>
+          <p className="mt-1 text-lg text-market-ink/70 dark:text-white/70">متجر بلقاسم للمواد الغذائية</p>
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-leaf-700 shadow-soft dark:bg-white/10 dark:text-leaf-100">
+            <Wifi className="h-4 w-4" />
+            {isOnline ? "متزامن الآن" : "بدون إنترنت"}
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+        </div>
+        <button className="ios-circle-button" title="التنبيهات">
+          <Bell className="h-5 w-5" />
+        </button>
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="مبيعات اليوم" value={formatCurrency(stats.todaySales)} icon={ReceiptText} />
-        <Metric label="ربح اليوم" value={formatCurrency(stats.todayProfit)} icon={TrendingUp} accent="orange" />
-        <Metric label="مبيعات الأسبوع" value={formatCurrency(stats.weekSales)} icon={WalletCards} accent="sky" />
-        <Metric label="ربح الأسبوع" value={formatCurrency(stats.weekProfit)} icon={TrendingUp} accent="yellow" />
-        <Metric label="مبيعات الشهر" value={formatCurrency(stats.monthSales)} icon={ReceiptText} />
-        <Metric label="ربح الشهر" value={formatCurrency(stats.monthProfit)} icon={TrendingUp} accent="orange" />
-        <Metric label="مبيعات السنة" value={formatCurrency(stats.yearSales)} icon={WalletCards} accent="sky" />
-        <Metric label="ربح السنة" value={formatCurrency(stats.yearProfit)} icon={TrendingUp} accent="yellow" />
-        <Metric label="عدد المنتجات" value={formatNumber(stats.productCount)} icon={Boxes} />
-        <Metric label="أوشكت على النفاد" value={formatNumber(stats.lowStockCount)} icon={AlertTriangle} accent="yellow" />
-        <Metric label="نفدت من المخزون" value={formatNumber(stats.outOfStockCount)} icon={PackageCheck} accent="orange" />
-        <Metric label="إجمالي الديون" value={formatCurrency(stats.totalDebt)} icon={CircleDollarSign} accent="sky" />
+      <div className="mb-6 hidden lg:block">
+        <h1 className="text-3xl font-black">لوحة التحكم</h1>
+        <p className="mt-1 text-market-ink/60 dark:text-white/60">نظرة عامة على المبيعات، الأرباح، المخزون والكريدي.</p>
+      </div>
+
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <HeroMetric title="مبيعات اليوم" value={formatCurrency(stats.todaySales)} hint="0%" icon={TrendingUp} />
+        <HeroMetric title="ربح اليوم" value={formatCurrency(stats.todayProfit)} hint="0%" icon={Wallet} />
+        <HeroMetric title="ربح هذا الأسبوع" value={formatCurrency(stats.weekProfit)} hint="0%" icon={CalendarDays} tone="orange" />
+        <HeroMetric title="ربح هذا العام" value={formatCurrency(stats.yearProfit)} hint="0%" icon={ReceiptText} />
       </section>
 
-      <section className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card>
-          <h2 className="text-lg font-black">آخر عمليات البيع</h2>
-          <div className="mt-4 space-y-3">
-            {recentSales.length ? (
-              recentSales.map((sale) => (
-                <div
-                  key={sale.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/5 bg-white/58 p-3 dark:border-white/10 dark:bg-white/5"
-                >
-                  <div>
-                    <p className="font-bold">{sale.receiptNumber}</p>
-                    <p className="text-xs text-market-ink/55 dark:text-white/55">
-                      {sale.type === "cash" ? "بيع سالك" : `كريدي - ${sale.customerName ?? "زبون"}`} ·{" "}
-                      {formatDate(sale.createdAt)}
-                    </p>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
-                    <p className="text-xs text-leaf-700 dark:text-leaf-200">ربح {formatCurrency(sale.totalProfit)}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <EmptyState icon={ReceiptText} title="لا توجد مبيعات بعد" body="ابدأ من صفحة البيع لإظهار العمليات هنا." />
-            )}
-          </div>
-        </Card>
+      <Link href="/inventory" className="ios-card mt-5 flex items-center justify-between gap-4 border-orange-200/80 bg-orange-50/70">
+        <ArrowLeft className="h-6 w-6" />
+        <div className="flex-1 text-center">
+          <p className="text-lg font-black">تنبيهات المخزون المنخفض</p>
+          <p className="mt-1 text-sm text-market-ink/62">{formatNumber(stats.lowStockCount)} منتجات بحاجة إلى إعادة طلب</p>
+        </div>
+        <div className="relative ios-icon ios-icon-orange">
+          <Package className="h-6 w-6" />
+          <span className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 text-sm font-black text-white">
+            {stats.lowStockCount}
+          </span>
+        </div>
+      </Link>
 
-        <Card>
-          <h2 className="text-lg font-black">تنبيهات ذكية</h2>
-          <div className="mt-4 space-y-3">
-            {alerts.length ? (
-              alerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className="rounded-lg border border-black/5 bg-white/58 p-3 dark:border-white/10 dark:bg-white/5"
-                >
-                  <p className="font-bold">{alert.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-market-ink/62 dark:text-white/62">{alert.body}</p>
-                </div>
-              ))
-            ) : (
-              <EmptyState icon={PackageCheck} title="الوضع جيد" body="لا توجد تنبيهات مهمة حالياً." />
-            )}
+      <section className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div className="ios-card">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-black">أحدث المبيعات</h2>
+            <Link href="/pos" className="text-sm font-bold text-leaf-700">عرض الكل</Link>
           </div>
-        </Card>
+          <div className="divide-y divide-black/5 dark:divide-white/10">
+            {recentSales.map((sale) => (
+                <div key={sale.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="ios-icon h-10 w-10 rounded-2xl">
+                      <ShoppingBag className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-black">{sale.receiptNumber}</p>
+                      <p className="text-xs text-market-ink/55">{sale.type === "cash" ? "نقدي" : "كريدي"}</p>
+                    </div>
+                  </div>
+                  <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
+                </div>
+              ))}
+            {!recentSales.length ? <p className="py-4 text-center text-sm font-bold text-market-ink/50">لا توجد مبيعات</p> : null}
+          </div>
+        </div>
+
+        <div className="ios-card">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-black">المنتجات الأكثر مبيعاً</h2>
+            <Link href="/reports" className="text-sm font-bold text-leaf-700">عرض الكل</Link>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {topProducts.slice(0, 3).map((product, index) => {
+              const source = data.products.find((item) => item.name === product.name);
+              return (
+                <ProductMini
+                  key={product.name}
+                  name={product.name}
+                  value={source ? formatCurrency(source.sellPrice) : `${formatNumber(product.quantity)} بيع`}
+                  image={source?.imageUrl}
+                  rank={index + 1}
+                />
+              );
+            })}
+          </div>
+        </div>
       </section>
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-3">
-        <Card>
-          <h2 className="text-lg font-black">أكثر المنتجات مبيعاً</h2>
-          <div className="mt-4 space-y-3">
-            {stats.topProducts.length ? (
-              stats.topProducts.map((product) => (
-                <div key={product.name} className="flex items-center justify-between gap-3">
-                  <span className="font-bold">{product.name}</span>
-                  <span className="text-sm text-market-ink/60 dark:text-white/60">{formatNumber(product.quantity)} قطعة</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-market-ink/60 dark:text-white/60">ستظهر بعد تسجيل المبيعات.</p>
-            )}
-          </div>
-        </Card>
-        <Card>
-          <h2 className="text-lg font-black">منتجات ربحها جيد</h2>
-          <div className="mt-4 space-y-3">
-            {stats.highProfitProducts.map((product) => (
-              <div key={product.id} className="flex items-center justify-between gap-3">
-                <span className="font-bold">{product.name}</span>
-                <span className="text-sm text-leaf-700 dark:text-leaf-200">{formatPercent(product.profitPercent)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <h2 className="text-lg font-black">منتجات ربحها ضعيف</h2>
-          <div className="mt-4 space-y-3">
-            {stats.weakProfitProducts.map((product) => (
-              <div key={product.id} className="flex items-center justify-between gap-3">
-                <span className="font-bold">{product.name}</span>
-                <span className="text-sm text-orange-700 dark:text-orange-200">{formatPercent(product.profitPercent)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+      <section className="mt-5 grid gap-4 lg:grid-cols-3">
+        <div className="ios-card">
+          <p className="text-sm text-market-ink/55">عدد المنتجات</p>
+          <p className="mt-2 text-3xl font-black">{formatNumber(stats.productCount)}</p>
+        </div>
+        <div className="ios-card">
+          <p className="text-sm text-market-ink/55">إجمالي الديون</p>
+          <p className="mt-2 text-3xl font-black">{formatCurrency(stats.totalDebt)}</p>
+        </div>
+        <div className="ios-card">
+          <p className="text-sm text-market-ink/55">تنبيهات ذكية</p>
+          <p className="mt-2 text-3xl font-black">{formatNumber(alerts.length + lowStock.length)}</p>
+        </div>
       </section>
     </div>
   );
