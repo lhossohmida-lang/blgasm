@@ -12,18 +12,29 @@ function PwaRegistrar() {
       return;
     }
 
-    if (process.env.NODE_ENV !== "production") {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => registration.unregister());
-      });
-      return;
+    let cancelled = false;
+
+    const register = async () => {
+      try {
+        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        if (!cancelled && process.env.NODE_ENV === "development") {
+          registration.update().catch(() => undefined);
+        }
+      } catch (error) {
+        console.info("Service worker registration skipped:", error);
+      }
+    };
+
+    if (document.readyState === "complete") {
+      register();
+    } else {
+      window.addEventListener("load", register, { once: true });
     }
 
-    {
-      navigator.serviceWorker.register("/sw.js").catch((error) => {
-        console.info("Service worker registration skipped:", error);
-      });
-    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener("load", register);
+    };
   }, []);
 
   return null;
