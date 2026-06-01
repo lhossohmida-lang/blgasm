@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Bot, Cloud, Mic, Package, Send, ShieldCheck, TrendingUp, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/components/providers/store-provider";
@@ -14,12 +14,102 @@ const suggestions = [
   { label: "أكثر شخص عليه كريدي؟", icon: UserRound },
 ];
 
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognition;
+
+type SpeechWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+
 export default function AiPage() {
   const { data, stats } = useStore();
   const { notify } = useToast();
   const [message, setMessage] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  function toggleListening() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const speechWindow = window as SpeechWindow;
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      notify({
+        tone: "warning",
+        title: "الميكروفون غير مدعوم",
+        body: "جرّب Chrome أو Edge، وافتح التطبيق عبر HTTPS أو localhost.",
+      });
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognitionRef.current = recognition;
+    recognition.lang = "ar-DZ";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (transcript) {
+        setMessage(transcript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setListening(false);
+      notify({
+        tone: "error",
+        title: "تعذر تشغيل الميكروفون",
+        body: event.error === "not-allowed" ? "اسمح للتطبيق باستعمال الميكروفون من المتصفح." : "حاول مرة أخرى.",
+      });
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
+  }
 
   async function ask(event?: FormEvent<HTMLFormElement>, override?: string) {
     event?.preventDefault();
@@ -160,7 +250,12 @@ export default function AiPage() {
       ) : null}
 
       <form onSubmit={ask} className="no-print fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-[460px] items-center gap-3 rounded-full bg-white/95 p-3 shadow-glass backdrop-blur-2xl lg:static lg:mt-5 lg:max-w-none lg:rounded-3xl">
-        <button type="button" className="ios-circle-button h-12 w-12 bg-leaf-50 text-leaf-700">
+        <button
+          type="button"
+          className={`ios-circle-button h-12 w-12 ${listening ? "bg-red-600 text-white ring-4 ring-red-500/20" : "bg-leaf-50 text-leaf-700"}`}
+          title={listening ? "إيقاف التسجيل" : "التحدث بالميكروفون"}
+          onClick={toggleListening}
+        >
           <Mic className="h-6 w-6" />
         </button>
         <input
