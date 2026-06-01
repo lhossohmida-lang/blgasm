@@ -1,5 +1,11 @@
 export type SaleType = "cash" | "credit";
 
+export type ProductSaleMode = "unit" | "carton" | "weight";
+
+export type ProductPurchaseUnit = "piece" | "carton" | "kilogram";
+
+export type ProductSaleUnit = "piece" | "gram";
+
 export type CreditTransactionType = "invoice" | "payment";
 
 export type SyncStatus = "pending" | "synced" | "failed";
@@ -31,6 +37,9 @@ export interface Product {
   category: string;
   wholesalePrice: number;
   unitsPerWholesale: number;
+  saleMode?: ProductSaleMode;
+  purchaseUnit?: ProductPurchaseUnit;
+  saleUnit?: ProductSaleUnit;
   unitCost: number;
   sellPrice: number;
   profitPerUnit: number;
@@ -50,6 +59,10 @@ export interface ProductDraft {
   category: string;
   wholesalePrice: number;
   unitsPerWholesale: number;
+  saleMode?: ProductSaleMode;
+  purchaseUnit?: ProductPurchaseUnit;
+  saleUnit?: ProductSaleUnit;
+  unitCost?: number;
   sellPrice: number;
   quantity: number;
   lowStockAlert: number;
@@ -60,6 +73,7 @@ export interface SaleItem {
   productId: string;
   qrCode: string;
   name: string;
+  saleUnit?: ProductSaleUnit;
   quantity: number;
   unitPrice: number;
   unitCost: number;

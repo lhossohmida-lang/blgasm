@@ -1,5 +1,5 @@
 import type { Sale, StoreProfile } from "@/types";
-import { formatCurrency, formatDate } from "@/utils/format";
+import { formatCurrency, formatDate, formatQuantity } from "@/utils/format";
 
 export function Receipt({ sale, store }: { sale: Sale; store: StoreProfile }) {
   return (
@@ -25,7 +25,7 @@ export function Receipt({ sale, store }: { sale: Sale; store: StoreProfile }) {
           {sale.items.map((item) => (
             <tr key={`${sale.id}-${item.productId}`}>
               <td className="py-1">{item.name}</td>
-              <td className="py-1 text-center">{item.quantity}</td>
+              <td className="py-1 text-center">{formatQuantity(item.quantity, item.saleUnit)}</td>
               <td className="py-1 text-left">{formatCurrency(item.total)}</td>
             </tr>
           ))}

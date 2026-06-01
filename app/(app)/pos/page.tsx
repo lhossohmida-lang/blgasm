@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Banknote, Minus, Plus, QrCode, ReceiptText, Trash2, UserPlus } from "lucide-react";
 import { KeyboardScanner } from "@/components/scanner/keyboard-scanner";
 import { Receipt } from "@/components/print/receipt";
@@ -11,7 +11,35 @@ import { useToast } from "@/components/providers/toast-provider";
 import type { Sale, SaleItem, SaleType } from "@/types";
 import { buildSaleItem, calculateSaleTotals } from "@/utils/calculations";
 import { cn } from "@/utils/cn";
-import { formatCurrency } from "@/utils/format";
+import { formatCurrency, formatQuantity, unitPriceLabel } from "@/utils/format";
+
+function saleStep(item: SaleItem) {
+  return item.saleUnit === "gram" ? 100 : 1;
+}
+
+function amountStep(amount: number) {
+  if (amount >= 1000) return 100;
+  if (amount >= 100) return 50;
+  return 10;
+}
+
+function parseCartNumber(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(",", ".")
+    .replace("٫", ".");
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function cleanCartNumberInput(value: string, mode: "amount" | "quantity") {
+  const allowed = mode === "amount" ? /[^0-9٠-٩۰-۹,.٫]/g : /[^0-9٠-٩۰-۹]/g;
+  return value.replace(allowed, "");
+}
 
 export default function PosPage() {
   const { data, findProductByCode, createSale, upsertCustomer } = useStore();
@@ -25,9 +53,22 @@ export default function PosPage() {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [focusProductId, setFocusProductId] = useState("");
+  const [cartInputValues, setCartInputValues] = useState<Record<string, string>>({});
 
   const totals = useMemo(() => calculateSaleTotals(cart), [cart]);
   const remaining = Math.max(0, totals.totalAmount - paidAmount);
+
+  useEffect(() => {
+    if (!focusProductId) return;
+
+    const input = document.querySelector<HTMLInputElement>(`[data-cart-input="${focusProductId}"]`);
+    if (!input) return;
+
+    input.focus();
+    input.select();
+    setFocusProductId("");
+  }, [cart, focusProductId]);
 
   function addByCode(code: string) {
     const product = findProductByCode(code);
@@ -38,10 +79,11 @@ export default function PosPage() {
     setCart((current) => {
       const existing = current.find((item) => item.productId === product.id);
       if (existing) {
-        return current.map((item) => (item.productId === product.id ? buildSaleItem(product, item.quantity + 1) : item));
+        return current.map((item) => (item.productId === product.id ? buildSaleItem(product, item.quantity + saleStep(item)) : item));
       }
-      return [buildSaleItem(product, 1), ...current];
+      return [buildSaleItem(product, product.saleUnit === "gram" ? 100 : 1), ...current];
     });
+    setFocusProductId(product.id);
     setQr("");
   }
 
@@ -49,8 +91,74 @@ export default function PosPage() {
     const product = data?.products.find((item) => item.id === productId);
     if (!product) return;
     setCart((current) =>
-      current.map((item) => (item.productId === productId ? buildSaleItem(product, Math.max(1, quantity)) : item)),
+      current.map((item) => (item.productId === productId ? buildSaleItem(product, Math.max(0, quantity)) : item)),
     );
+  }
+
+  function updateAmount(productId: string, amount: number) {
+    const product = data?.products.find((item) => item.id === productId);
+    if (!product) return;
+    const unitPrice = product.saleUnit === "gram" ? product.sellPrice / product.unitsPerWholesale : product.sellPrice;
+    const quantity = unitPrice > 0 ? amount / unitPrice : 1;
+    updateQty(productId, quantity);
+  }
+
+  function changeCartInput(productId: string, rawValue: string, mode: "amount" | "quantity") {
+    const cleanValue = cleanCartNumberInput(rawValue, mode);
+    setCartInputValues((current) => ({ ...current, [productId]: cleanValue }));
+
+    const value = parseCartNumber(cleanValue);
+    if (value === null) {
+      return;
+    }
+
+    if (mode === "amount") {
+      updateAmount(productId, value);
+    } else {
+      updateQty(productId, value);
+    }
+  }
+
+  function commitCartInput(productId: string) {
+    setCartInputValues((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }
+
+  function stepCartInput(item: SaleItem, direction: 1 | -1) {
+    const rawValue = cartInputValues[item.productId];
+    const typedValue = rawValue === undefined ? null : parseCartNumber(rawValue);
+
+    if (item.saleUnit === "gram") {
+      const currentAmount = typedValue ?? item.total;
+      const nextAmount = Math.max(0, currentAmount + direction * amountStep(currentAmount));
+      changeCartInput(item.productId, String(nextAmount), "amount");
+      return;
+    }
+
+    const currentQuantity = typedValue ?? item.quantity;
+    const nextQuantity = Math.max(0, currentQuantity + direction * saleStep(item));
+    changeCartInput(item.productId, String(nextQuantity), "quantity");
+  }
+
+  function handleCartInputKey(event: KeyboardEvent<HTMLInputElement>, item: SaleItem) {
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      stepCartInput(item, 1);
+      return;
+    }
+
+    if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      stepCartInput(item, -1);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.currentTarget.blur();
+    }
   }
 
   async function completeSale() {
@@ -75,6 +183,7 @@ export default function PosPage() {
       });
       setLastSale(sale);
       setCart([]);
+      setCartInputValues({});
       setPaidAmount(0);
       setNewCustomerName("");
     } catch (error) {
@@ -160,7 +269,14 @@ export default function PosPage() {
 
           <div className="ios-card overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-black/5 px-4 py-4">
-              <button className="text-red-600" onClick={() => setCart([])} title="تفريغ">
+              <button
+                className="text-red-600"
+                onClick={() => {
+                  setCart([]);
+                  setCartInputValues({});
+                }}
+                title="تفريغ"
+              >
                 <Trash2 className="h-5 w-5" />
               </button>
               <h2 className="flex items-center gap-2 text-xl font-black">
@@ -180,17 +296,101 @@ export default function PosPage() {
                         <div>
                           <p className="text-lg font-black">{item.name}</p>
                           <p className="text-sm text-market-ink/55">#{item.qrCode.slice(-4)}</p>
-                          <p className="mt-1 text-sm font-bold text-leaf-700">ربح الوحدة: {formatCurrency(item.unitPrice - item.unitCost)}</p>
+                          <p className="mt-1 text-sm font-bold text-leaf-700">
+                            {item.saleUnit === "gram"
+                              ? `ربح الكيلو: ${formatCurrency((item.unitPrice - item.unitCost) * 1000)}`
+                              : `ربح الوحدة: ${formatCurrency(item.unitPrice - item.unitCost)}`}
+                          </p>
                         </div>
                       </div>
                       <div className="text-left">
                         <p className="text-xl font-black">{formatCurrency(item.total)}</p>
-                        <p className="text-sm text-market-ink/55">{formatCurrency(item.unitPrice)} للوحدة</p>
-                        <div className="mt-3 inline-flex items-center rounded-2xl border border-black/10 bg-white">
-                          <button className="p-2" onClick={() => updateQty(item.productId, item.quantity - 1)}><Minus className="h-4 w-4" /></button>
-                          <span className="min-w-10 text-center font-black">{item.quantity}</span>
-                          <button className="p-2" onClick={() => updateQty(item.productId, item.quantity + 1)}><Plus className="h-4 w-4" /></button>
-                        </div>
+                        <p className="text-sm text-market-ink/55">
+                          {formatCurrency(item.saleUnit === "gram" ? item.unitPrice * 1000 : item.unitPrice)} {unitPriceLabel(item.saleUnit)}
+                        </p>
+                        {item.saleUnit === "gram" ? (
+                          <div className="mt-3 inline-flex items-center rounded-2xl border border-black/10 bg-white">
+                            <button
+                              type="button"
+                              className="p-2"
+                              tabIndex={-1}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                stepCartInput(item, -1);
+                              }}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <span className="text-xs font-bold text-market-ink/55">دج</span>
+                            <input
+                              className="w-20 bg-transparent text-center font-black outline-none"
+                              type="text"
+                              inputMode="decimal"
+                              value={cartInputValues[item.productId] ?? item.total}
+                              data-cart-input={item.productId}
+                              onChange={(event) => changeCartInput(item.productId, event.target.value, "amount")}
+                              onBlur={() => commitCartInput(item.productId)}
+                              onKeyDown={(event) => handleCartInputKey(event, item)}
+                              aria-label={`مبلغ ${item.name}`}
+                            />
+                            <button
+                              type="button"
+                              className="p-2"
+                              tabIndex={-1}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                stepCartInput(item, 1);
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-3 inline-flex items-center rounded-2xl border border-black/10 bg-white">
+                            <button
+                              type="button"
+                              className="p-2"
+                              tabIndex={-1}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                stepCartInput(item, -1);
+                              }}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <input
+                              className="w-20 bg-transparent text-center font-black outline-none"
+                              type="text"
+                              inputMode="numeric"
+                              value={cartInputValues[item.productId] ?? item.quantity}
+                              data-cart-input={item.productId}
+                              onChange={(event) => changeCartInput(item.productId, event.target.value, "quantity")}
+                              onBlur={() => commitCartInput(item.productId)}
+                              onKeyDown={(event) => handleCartInputKey(event, item)}
+                              aria-label={`كمية ${item.name}`}
+                            />
+                            <button
+                              type="button"
+                              className="p-2"
+                              tabIndex={-1}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                stepCartInput(item, 1);
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                        <p className="mt-1 text-xs font-bold text-market-ink/55">{formatQuantity(item.quantity, item.saleUnit)}</p>
                       </div>
                     </div>
                   );

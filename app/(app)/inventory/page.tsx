@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, Box, Filter, Grid2X2, Plus, QrCode, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AlertTriangle, Box, Filter, Grid2X2, Pencil, Plus, QrCode, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProductForm } from "@/components/products/product-form";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/components/providers/store-provider";
 import type { Product } from "@/types";
-import { formatCurrency, formatNumber } from "@/utils/format";
+import { formatCurrency, formatNumber, formatStockQuantity, unitPriceLabel } from "@/utils/format";
 import { cn } from "@/utils/cn";
 
 function statusFor(product: Product) {
@@ -125,6 +125,15 @@ export default function InventoryPage() {
           const status = statusFor(product);
           return (
             <article key={product.id} className="ios-card-tight flex items-center gap-4">
+              <button
+                className="self-start inline-flex items-center gap-1 rounded-full bg-leaf-50 px-3 py-2 text-sm font-black text-leaf-700"
+                onClick={() => setEditing(product)}
+                title="تعديل"
+                type="button"
+              >
+                <Pencil className="h-4 w-4" />
+                تعديل
+              </button>
               <button className="self-start rounded-full p-2 text-market-ink/55" onClick={() => setDeleting(product)} title="حذف">
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -140,9 +149,11 @@ export default function InventoryPage() {
                   <span className={cn("rounded-2xl px-4 py-2 text-sm font-black", status.className)}>{status.label}</span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <p className="font-bold text-leaf-700">سعر البيع {formatCurrency(product.sellPrice)}</p>
+                  <p className="font-bold text-leaf-700">
+                    سعر البيع {formatCurrency(product.sellPrice)} {unitPriceLabel(product.saleUnit)}
+                  </p>
                   <p className={status.tone === "green" ? "text-leaf-700" : "text-red-600"}>
-                    {formatNumber(product.quantity)} وحدة
+                    {formatStockQuantity(product.quantity, product.saleUnit)}
                   </p>
                 </div>
               </div>

@@ -3,6 +3,8 @@ import type {
   DashboardStats,
   Product,
   ProductDraft,
+  ProductSaleUnit,
+  ProductSaleMode,
   Sale,
   SaleItem,
 } from "@/types";
@@ -15,6 +17,9 @@ export function roundMoney(value: number) {
 export function calculateProductPricing(input: {
   wholesalePrice: number;
   unitsPerWholesale: number;
+  saleMode?: ProductSaleMode;
+  saleUnit?: ProductSaleUnit;
+  unitCost?: number;
   sellPrice: number;
   quantity?: number;
 }) {
@@ -22,19 +27,41 @@ export function calculateProductPricing(input: {
   const wholesalePrice = Number(input.wholesalePrice) || 0;
   const sellPrice = Number(input.sellPrice) || 0;
   const quantity = Math.max(0, Number(input.quantity) || 0);
-  const unitCost = roundMoney(wholesalePrice / units);
-  const profitPerUnit = roundMoney(sellPrice - unitCost);
+  const isWeight = input.saleMode === "weight" || input.saleUnit === "gram";
+  const unitCost = Number.isFinite(input.unitCost) ? roundMoney(Number(input.unitCost)) : roundMoney(wholesalePrice / units);
+  const unitSellPrice = isWeight ? sellPrice / units : sellPrice;
+  const profitPerUnit = roundMoney(unitSellPrice - unitCost);
   const profitPercent = unitCost > 0 ? roundMoney((profitPerUnit / unitCost) * 100) : 0;
   const expectedStockProfit = roundMoney(profitPerUnit * quantity);
 
   return { unitCost, profitPerUnit, profitPercent, expectedStockProfit };
 }
 
+function resolveSaleMode(draft: ProductDraft, existing?: Product): ProductSaleMode {
+  if (draft.saleMode) return draft.saleMode;
+  if (existing?.saleMode) return existing.saleMode;
+  if ((draft.saleUnit ?? existing?.saleUnit) === "gram") return "weight";
+  if ((draft.unitsPerWholesale ?? existing?.unitsPerWholesale ?? 1) > 1) return "carton";
+  return "unit";
+}
+
+function normalizeSaleQuantity(quantity: number, unit?: ProductSaleUnit) {
+  const safe = Math.max(0, Number(quantity) || 0);
+  return unit === "gram" ? roundMoney(safe) : Math.max(0, Math.floor(safe));
+}
+
 export function productFromDraft(draft: ProductDraft, existing?: Product): Product {
   const now = new Date().toISOString();
+  const saleMode = resolveSaleMode(draft, existing);
+  const unitsPerWholesale =
+    saleMode === "unit" ? 1 : saleMode === "weight" ? 1000 : Math.max(1, Number(draft.unitsPerWholesale) || 1);
+  const saleUnit: ProductSaleUnit = saleMode === "weight" ? "gram" : "piece";
   const pricing = calculateProductPricing({
     wholesalePrice: draft.wholesalePrice,
-    unitsPerWholesale: draft.unitsPerWholesale,
+    unitsPerWholesale,
+    saleMode,
+    saleUnit,
+    unitCost: draft.unitCost,
     sellPrice: draft.sellPrice,
     quantity: draft.quantity,
   });
@@ -45,7 +72,10 @@ export function productFromDraft(draft: ProductDraft, existing?: Product): Produ
     name: draft.name.trim(),
     category: draft.category.trim() || "مواد غذائية",
     wholesalePrice: Number(draft.wholesalePrice) || 0,
-    unitsPerWholesale: Math.max(1, Number(draft.unitsPerWholesale) || 1),
+    unitsPerWholesale,
+    saleMode,
+    purchaseUnit: saleMode === "weight" ? "kilogram" : saleMode === "carton" ? "carton" : "piece",
+    saleUnit,
     sellPrice: Number(draft.sellPrice) || 0,
     quantity: Math.max(0, Number(draft.quantity) || 0),
     lowStockAlert: Math.max(0, Number(draft.lowStockAlert) || 0),
@@ -57,26 +87,31 @@ export function productFromDraft(draft: ProductDraft, existing?: Product): Produ
 }
 
 export function buildSaleItem(product: Product, quantity = 1): SaleItem {
-  const safeQuantity = Math.max(1, Number(quantity) || 1);
+  const safeQuantity = normalizeSaleQuantity(quantity, product.saleUnit);
+  const unitPrice = product.saleUnit === "gram" ? roundMoney(product.sellPrice / product.unitsPerWholesale) : product.sellPrice;
   return {
     productId: product.id,
     qrCode: product.qrCode,
     name: product.name,
+    saleUnit: product.saleUnit ?? "piece",
     quantity: safeQuantity,
-    unitPrice: product.sellPrice,
+    unitPrice,
     unitCost: product.unitCost,
-    total: roundMoney(product.sellPrice * safeQuantity),
+    total: roundMoney(unitPrice * safeQuantity),
     profit: roundMoney(product.profitPerUnit * safeQuantity),
   };
 }
 
 export function recalculateSaleItems(items: SaleItem[]) {
-  return items.map((item) => ({
-    ...item,
-    quantity: Math.max(1, Number(item.quantity) || 1),
-    total: roundMoney(item.unitPrice * Math.max(1, Number(item.quantity) || 1)),
-    profit: roundMoney((item.unitPrice - item.unitCost) * Math.max(1, Number(item.quantity) || 1)),
-  }));
+  return items.map((item) => {
+    const quantity = normalizeSaleQuantity(item.quantity, item.saleUnit);
+    return {
+      ...item,
+      quantity,
+      total: roundMoney(item.unitPrice * quantity),
+      profit: roundMoney((item.unitPrice - item.unitCost) * quantity),
+    };
+  });
 }
 
 export function calculateSaleTotals(items: SaleItem[]) {
