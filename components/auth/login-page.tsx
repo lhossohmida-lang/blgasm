@@ -1,24 +1,38 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { ArrowLeft, EyeOff, Lock, Mail } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { ArrowLeft, EyeOff, Lock, Mail, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
 
+const SAVED_EMAIL_KEY = "blgasm-saved-email";
+
 export function LoginPage() {
   const { login, reset } = useAuth();
   const { notify } = useToast();
+  const [savedEmail, setSavedEmail] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SAVED_EMAIL_KEY);
+    if (stored) {
+      setSavedEmail(stored);
+    }
+  }, []);
+
+  const isReturning = Boolean(savedEmail);
+  const activeEmail = isReturning ? savedEmail! : email;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
+      await login(activeEmail, password);
+      window.localStorage.setItem(SAVED_EMAIL_KEY, activeEmail);
     } catch (error) {
       notify({
         tone: "error",
@@ -30,15 +44,22 @@ export function LoginPage() {
     }
   }
 
+  function switchAccount() {
+    window.localStorage.removeItem(SAVED_EMAIL_KEY);
+    setSavedEmail(null);
+    setEmail("");
+    setPassword("");
+  }
+
   async function handleReset() {
-    if (!email) {
+    if (!activeEmail) {
       notify({ tone: "warning", title: "أدخل البريد الإلكتروني أولاً" });
       return;
     }
 
     setLoading(true);
     try {
-      await reset(email);
+      await reset(activeEmail);
     } catch (error) {
       notify({
         tone: "error",
@@ -72,19 +93,40 @@ export function LoginPage() {
           </div>
 
           <div className="ios-card p-5">
-            <form className="space-y-4" onSubmit={submit}>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute right-4 top-[42px] h-5 w-5 text-leaf-700" />
-                <Input
-                  label="البريد الإلكتروني"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="ahmed@example.com"
-                  className="pr-12"
-                  required
-                />
+            {isReturning ? (
+              <div className="mb-4 flex items-center gap-3 rounded-2xl bg-leaf-50 px-4 py-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-leaf-100">
+                  <UserRound className="h-5 w-5 text-leaf-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-market-ink/55">تسجيل الدخول كـ</p>
+                  <p className="truncate font-black text-leaf-700">{savedEmail}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={switchAccount}
+                  className="text-xs font-bold text-market-ink/55 underline hover:text-market-ink"
+                >
+                  تغيير
+                </button>
               </div>
+            ) : null}
+
+            <form className="space-y-4" onSubmit={submit}>
+              {!isReturning ? (
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute right-4 top-[42px] h-5 w-5 text-leaf-700" />
+                  <Input
+                    label="البريد الإلكتروني"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="ahmed@example.com"
+                    className="pr-12"
+                    required
+                  />
+                </div>
+              ) : null}
 
               <div className="relative">
                 <Lock className="pointer-events-none absolute right-4 top-[42px] h-5 w-5 text-leaf-700" />

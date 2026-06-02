@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -20,19 +20,25 @@ import {
   UsersRound,
   Wifi,
   WifiOff,
+  Lock,
+  EyeOff,
+  Zap,
+  Tag,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { LoginPage } from "@/components/auth/login-page";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useStore } from "@/components/providers/store-provider";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/utils/cn";
+import { useToast } from "@/components/providers/toast-provider";
+import { Input } from "@/components/ui/input";
 
 const desktopNav = [
   { href: "/dashboard", label: "لوحة التحكم", icon: Home },
   { href: "/inventory", label: "المخزون", icon: Boxes },
-  { href: "/products/new", label: "إدخال منتج جديد", icon: PackagePlus },
+  { href: "/products/new", label: "شراء", icon: PackagePlus },
   { href: "/pos", label: "المبيعات", icon: ShoppingCart },
   { href: "/credits", label: "الكريديات", icon: UsersRound },
   { href: "/reports", label: "التقارير", icon: BarChart3 },
@@ -45,13 +51,48 @@ const bottomNav = [
   { href: "/pos", label: "البيع", icon: ShoppingCart },
   { href: "/credits", label: "الكريدي", icon: UserRound },
   { href: "/reports", label: "التقارير", icon: BarChart3 },
+  { href: "/ai", label: "الذكاء", icon: Bot },
 ];
+
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, loading: authLoading, logout } = useAuth();
+  const router = useRouter();
+  const { user, loading: authLoading, logout, login } = useAuth();
   const { data, loading: storeLoading, isOnline, pendingSyncCount, syncNow } = useStore();
+  const { notify } = useToast();
+
+  const shortcutProductIds = useMemo(() => {
+    if (typeof window === "undefined") return [] as string[];
+    try {
+      const stored = window.localStorage.getItem("blgasm-inventory-shortcuts");
+      if (!stored) return [] as string[];
+      const parsed = JSON.parse(stored) as string[];
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch { return [] as string[]; }
+  }, []);
+
+  const shortcutProducts = useMemo(
+    () => shortcutProductIds.map((id) => data?.products.find((p) => p.id === id)).filter(Boolean),
+    [shortcutProductIds, data?.products],
+  );
+
+  const slots = useMemo(() => {
+    return Array.from({ length: 9 }).map((_, index) => {
+      return shortcutProducts[index] || null;
+    });
+  }, [shortcutProducts]);
   const [dark, setDark] = useState(false);
+  const [lockPassword, setLockPassword] = useState("");
+  const [lockLoading, setLockLoading] = useState(false);
+  const [isLocked, setIsLocked] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedEmail = window.localStorage.getItem("blgasm-saved-email");
+      const demoEnabled = window.localStorage.getItem("blgasm-demo-mode") === "1";
+      return Boolean(savedEmail) && !demoEnabled;
+    }
+    return false;
+  });
 
   useEffect(() => {
     const stored = window.localStorage.getItem("blgasm-theme");
@@ -67,6 +108,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", next);
   }
 
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setLockLoading(true);
+    try {
+      await login(user.email, lockPassword);
+      setIsLocked(false);
+      setLockPassword("");
+      notify({ tone: "success", title: "تم فتح القفل بنجاح" });
+    } catch (error) {
+      notify({
+        tone: "error",
+        title: "رمز المرور غير صحيح",
+        body: "الرجاء إدخال كلمة مرور الحساب الصحيحة.",
+      });
+    } finally {
+      setLockLoading(false);
+    }
+  }
+
   if (authLoading) {
     return <LoadingState label="جاري تجهيز التطبيق..." />;
   }
@@ -75,35 +136,129 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
+  if (isLocked) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-5 bg-gradient-to-tr from-market-ink to-market-ink/90 text-white dark:from-market-ink dark:to-black">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-leaf-950/20 via-transparent to-transparent pointer-events-none" />
+        <div className="w-full max-w-[420px] relative">
+          <div className="ios-card bg-white/10 dark:bg-black/40 border border-white/10 backdrop-blur-xl p-6 rounded-[32px] shadow-2xl text-center space-y-6">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-leaf-500/25 border border-leaf-400/30 text-leaf-400">
+              <Lock className="h-7 w-7 animate-pulse" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black">لوحة التحكم مقفلة</h1>
+              <p className="text-sm text-white/60 mt-1">{user.email}</p>
+            </div>
+            <form onSubmit={handleUnlock} className="space-y-4">
+              <div className="relative text-right">
+                <Input
+                  label="أدخل كلمة مرور الحساب لإلغاء القفل"
+                  type="password"
+                  value={lockPassword}
+                  onChange={(e) => setLockPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-white/5 border-white/15 text-white placeholder:text-white/30 rounded-2xl h-14 text-center text-lg font-black focus:border-leaf-500 focus:bg-white/10"
+                  required
+                />
+              </div>
+              <Button className="h-14 w-full rounded-2xl text-lg font-black bg-leaf-600 hover:bg-leaf-500 text-white border-none" loading={lockLoading}>
+                إلغاء القفل
+              </Button>
+            </form>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={logout}
+                className="text-sm font-bold text-white/50 hover:text-white underline transition"
+              >
+                تسجيل الخروج أو تغيير الحساب
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (storeLoading || !data) {
     return <LoadingState label="جاري تحميل بيانات المتجر..." />;
   }
 
+
   return (
     <div className="min-h-screen">
-      <aside className="desktop-sidebar no-print fixed inset-y-0 right-0 z-30 hidden w-72 p-5 text-white shadow-2xl lg:block">
-        <Link href="/dashboard" className="mb-8 flex items-center gap-3">
-          <img src="/blgasm-logo.png" alt="متجر بلقاسم" className="h-12 w-12 rounded-2xl border-2 border-white/70 bg-white" />
-          <div>
-            <p className="text-lg font-black">بلقاسم</p>
-            <p className="text-xs text-white/55">مدير المتجر</p>
+      <aside className="desktop-sidebar no-print fixed inset-y-0 right-0 z-30 hidden w-72 p-5 text-white shadow-2xl lg:flex lg:flex-col justify-between">
+        <div className="flex-1 overflow-y-auto space-y-6 pr-1 pb-4">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <img src="/blgasm-logo.png" alt="متجر بلقاسم" className="h-12 w-12 rounded-2xl border-2 border-white/70 bg-white" />
+            <div>
+              <p className="text-lg font-black">بلقاسم</p>
+              <p className="text-xs text-white/55">مدير المتجر</p>
+            </div>
+          </Link>
+
+          <nav className="space-y-1">
+            {desktopNav.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+              return (
+                <Link key={item.href} href={item.href} className={cn("nav-link", active && "nav-link-active")}>
+                  <Icon className="h-5 w-5" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* 9-Slot Shortcuts Grid */}
+          <div className="space-y-2 pt-4 border-t border-white/10">
+            <p className="text-xs font-black text-white/50 flex items-center gap-1">
+              <Zap className="h-3.5 w-3.5 text-orange-400" />
+              الاختصارات السريعة (3×3)
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {slots.map((product, index) => {
+                if (product) {
+                  return (
+                    <button
+                      key={product.id || index}
+                      type="button"
+                      onClick={() => {
+                        if (pathname === "/pos") {
+                          window.dispatchEvent(new CustomEvent("blgasm-add-to-cart", { detail: { code: product.qrCode } }));
+                        } else {
+                          window.localStorage.setItem("blgasm-pending-add", product.qrCode);
+                          router.push("/pos");
+                        }
+                      }}
+                      className="aspect-square flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/10 hover:bg-white/20 transition p-1 text-center"
+                      title={product.name}
+                    >
+                      {product.imageUrl ? (
+                        <img src={product.imageUrl} alt="" className="h-6 w-6 object-contain rounded-lg" />
+                      ) : (
+                        <div className="h-6 w-6 flex items-center justify-center rounded-lg bg-white/15 text-white/80">
+                          <Tag className="h-3.5 w-3.5 text-white/70" />
+                        </div>
+                      )}
+                      <p className="mt-1 line-clamp-1 text-[9px] font-black text-white/90 w-full px-0.5 leading-none">{product.name}</p>
+                    </button>
+                  );
+                }
+                return (
+                  <div
+                    key={`empty-${index}`}
+                    className="aspect-square rounded-2xl border border-dashed border-white/15 bg-white/[0.03] flex items-center justify-center text-white/30 text-[9px] font-bold"
+                  >
+                    فارغ
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </Link>
+        </div>
 
-        <nav className="space-y-1">
-          {desktopNav.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-            return (
-              <Link key={item.href} href={item.href} className={cn("nav-link", active && "nav-link-active")}>
-                <Icon className="h-5 w-5" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="absolute inset-x-5 bottom-5 space-y-2">
+        <div className="mt-auto pt-4 space-y-2 border-t border-white/10">
           <Button variant="secondary" className="w-full border-white/10 bg-white/10 text-white hover:bg-white/15" onClick={toggleTheme}>
             {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             تبديل الوضع

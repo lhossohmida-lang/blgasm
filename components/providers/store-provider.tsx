@@ -49,6 +49,7 @@ interface CreateSaleInput {
   customerId?: string;
   customerName?: string;
   paidAmount?: number;
+  discountAmount?: number;
 }
 
 interface StoreContextValue {
@@ -237,18 +238,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         throw new Error("اختر حساب كريدي قبل إتمام البيع.");
       }
 
-      const paidAmount = input.type === "cash" ? totals.totalAmount : Number(input.paidAmount) || 0;
+      const discountAmount = Math.min(Math.max(0, Number(input.discountAmount) || 0), totals.totalAmount);
+      const paidAmount = input.type === "cash" ? totals.totalAmount - discountAmount : Number(input.paidAmount) || 0;
       const sale: Sale = {
         id: crypto.randomUUID(),
         type: input.type,
         customerId: input.customerId,
         customerName: input.customerName,
         items: totals.items,
-        totalAmount: totals.totalAmount,
+        totalAmount: roundMoney(totals.totalAmount - discountAmount),
         totalCost: totals.totalCost,
         totalProfit: totals.totalProfit,
         paidAmount: roundMoney(paidAmount),
-        remainingAmount: roundMoney(totals.totalAmount - paidAmount),
+        remainingAmount: roundMoney(Math.max(0, totals.totalAmount - discountAmount - paidAmount)),
         receiptNumber: makeReceiptNumber(),
         createdAt: new Date().toISOString(),
         createdBy: user.uid,
@@ -277,6 +279,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           paidAmount: sale.paidAmount,
           remainingAmount: sale.remainingAmount,
           note: `فاتورة ${sale.receiptNumber}`,
+          items: totals.items.map((item) => ({ name: item.name, quantity: item.quantity, total: item.total })),
           createdAt: sale.createdAt,
         };
         creditTransactions = [transaction, ...creditTransactions];

@@ -22,6 +22,7 @@ const emptyDraft: ProductDraft = {
   quantity: 0,
   lowStockAlert: 5,
   imageUrl: "",
+  expiryDate: "",
 };
 
 function toDraft(product?: Product, qrCode?: string): ProductDraft {
@@ -44,6 +45,7 @@ function toDraft(product?: Product, qrCode?: string): ProductDraft {
     quantity: product.quantity,
     lowStockAlert: product.lowStockAlert,
     imageUrl: product.imageUrl,
+    expiryDate: product.expiryDate ?? "",
   };
 }
 
@@ -348,6 +350,12 @@ export function ProductForm({
         </div>
       ) : null}
 
+      <Input
+        label="تاريخ انتهاء الصلاحية (اختياري)"
+        type="date"
+        value={draft.expiryDate ?? ""}
+        onChange={(event) => update("expiryDate", event.target.value)}
+      />
       <Input
         label="صورة المنتج اختيارية"
         value={draft.imageUrl ?? ""}

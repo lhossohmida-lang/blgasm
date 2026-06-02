@@ -80,11 +80,13 @@ export function productFromDraft(draft: ProductDraft, existing?: Product): Produ
     quantity: Math.max(0, Number(draft.quantity) || 0),
     lowStockAlert: Math.max(0, Number(draft.lowStockAlert) || 0),
     imageUrl: draft.imageUrl?.trim() || undefined,
+    expiryDate: draft.expiryDate?.trim() || existing?.expiryDate || undefined,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     ...pricing,
   };
 }
+
 
 export function buildSaleItem(product: Product, quantity = 1): SaleItem {
   const safeQuantity = normalizeSaleQuantity(quantity, product.saleUnit);

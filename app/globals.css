@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -212,7 +212,7 @@ textarea {
   }
 
   .ios-bottom-nav {
-    @apply fixed inset-x-3 bottom-3 z-30 mx-auto grid max-w-[460px] grid-cols-5 gap-1 rounded-[30px] border border-black/5 bg-white/90 p-2 shadow-glass backdrop-blur-2xl dark:border-white/18 dark:bg-[#101b16]/95 lg:hidden;
+    @apply fixed inset-x-3 bottom-3 z-30 mx-auto grid max-w-[460px] grid-flow-col auto-cols-fr gap-1 rounded-[30px] border border-black/5 bg-white/90 p-2 shadow-glass backdrop-blur-2xl dark:border-white/18 dark:bg-[#101b16]/95 lg:hidden;
   }
 
   .ios-bottom-link {
@@ -359,17 +359,26 @@ textarea {
     color: black !important;
   }
 
-  .no-print {
-    display: none !important;
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
   }
 
   .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 72mm;
     display: block !important;
   }
 
   @page {
-    size: 80mm auto;
-    margin: 5mm;
+    size: 72mm auto;
+    margin: 0;
   }
 }
 

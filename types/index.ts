@@ -48,6 +48,7 @@ export interface Product {
   quantity: number;
   lowStockAlert: number;
   imageUrl?: string;
+  expiryDate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +68,7 @@ export interface ProductDraft {
   quantity: number;
   lowStockAlert: number;
   imageUrl?: string;
+  expiryDate?: string;
 }
 
 export interface SaleItem {
@@ -119,6 +121,7 @@ export interface CreditTransaction {
   paidAmount: number;
   remainingAmount: number;
   note?: string;
+  items?: Array<{ name: string; quantity: number; total: number }>;
   createdAt: string;
 }
 
