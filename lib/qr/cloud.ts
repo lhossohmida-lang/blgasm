@@ -1,20 +1,46 @@
 "use client";
 
-export async function decodeQrImageViaCloud(file: File) {
-  const formData = new FormData();
-  formData.append("image", file);
+import jsQR from "jsqr";
 
-  const response = await fetch("/api/qr/decode", {
-    method: "POST",
-    body: formData,
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("تعذر فتح الصورة."));
+    };
+    image.src = url;
   });
+}
 
-  const payload = (await response.json()) as { code?: string; error?: string };
-  if (!response.ok || !payload.code) {
-    throw new Error(payload.error ?? "تعذر استخراج QR من الصورة.");
+export async function decodeQrImageViaCloud(file: File) {
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("تعذر تجهيز الصورة للقراءة.");
   }
 
-  return payload.code;
+  context.drawImage(image, 0, 0);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const qr = jsQR(imageData.data, imageData.width, imageData.height, {
+    inversionAttempts: "attemptBoth",
+  });
+
+  if (!qr?.data) {
+    throw new Error("لم يتم العثور على QR داخل الصورة.");
+  }
+
+  return qr.data;
 }
 
 type NavigatorWithDevices = Navigator & {

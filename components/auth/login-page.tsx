@@ -1,36 +1,28 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { ArrowLeft, EyeOff, Lock, Mail, RefreshCcw, UserPlus } from "lucide-react";
+import { ArrowLeft, EyeOff, Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
 
-type Mode = "login" | "register";
-
 export function LoginPage() {
-  const { login, register, reset, enterDemoMode } = useAuth();
+  const { login, reset } = useAuth();
   const { notify } = useToast();
-  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     try {
-      if (mode === "login") {
-        await login(email, password);
-      } else {
-        await register(email, password);
-      }
+      await login(email, password);
     } catch (error) {
       notify({
         tone: "error",
-        title: mode === "login" ? "تعذر تسجيل الدخول" : "تعذر إنشاء الحساب",
+        title: "تعذر تسجيل الدخول",
         body: error instanceof Error ? error.message : "راجع البريد وكلمة المرور.",
       });
     } finally {
@@ -116,8 +108,8 @@ export function LoginPage() {
                 <label className="flex items-center gap-2 text-market-ink/70">
                   <input
                     type="checkbox"
-                    checked={remember}
-                    onChange={(event) => setRemember(event.target.checked)}
+                    checked
+                    readOnly
                     className="h-5 w-5 rounded border-black/10 accent-leaf-600"
                   />
                   تذكرني
@@ -125,25 +117,10 @@ export function LoginPage() {
               </div>
 
               <Button className="h-16 w-full rounded-3xl text-xl" loading={loading}>
-                {mode === "login" ? "تسجيل الدخول" : "إنشاء الحساب"}
+                تسجيل الدخول
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </form>
-
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-4 h-14 w-full rounded-3xl text-lg text-leaf-700"
-              onClick={() => setMode((current) => (current === "login" ? "register" : "login"))}
-            >
-              <UserPlus className="h-5 w-5" />
-              {mode === "login" ? "إنشاء حساب" : "لدي حساب"}
-            </Button>
-
-            <Button type="button" variant="ghost" className="mt-3 w-full text-leaf-700" onClick={enterDemoMode}>
-              <RefreshCcw className="h-4 w-4" />
-              تجربة محلية بدون حساب
-            </Button>
           </div>
 
           <p className="mt-6 text-center text-xs leading-6 text-market-ink/55">

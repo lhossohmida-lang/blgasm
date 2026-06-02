@@ -13,6 +13,7 @@ const suggestions = [
   { label: "المنتجات الناقصة؟", icon: Package },
   { label: "أكثر شخص عليه كريدي؟", icon: UserRound },
 ];
+const AI_CHAT_ENDPOINT = process.env.NEXT_PUBLIC_AI_CHAT_URL ?? "/api/ai/chat";
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
@@ -122,7 +123,7 @@ export default function AiPage() {
     setMessage(prompt);
 
     try {
-      const response = await fetch("/api/ai/chat", {
+      const response = await fetch(AI_CHAT_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: prompt, context: buildAiContext(data) }),
@@ -143,7 +144,12 @@ export default function AiPage() {
       notify({
         tone: "error",
         title: "تعذر تشغيل المساعد",
-        body: error instanceof Error ? error.message : "تأكد من ضبط OPENROUTER_API_KEY على الخادم.",
+        body:
+          error instanceof Error
+            ? error.message
+            : AI_CHAT_ENDPOINT.startsWith("/api/")
+              ? "نسخة APK تحتاج NEXT_PUBLIC_AI_CHAT_URL يشير إلى رابط Vercel الخاص بالذكاء الاصطناعي."
+              : "تأكد من ضبط OPENROUTER_API_KEY على الخادم.",
       });
     } finally {
       setLoading(false);

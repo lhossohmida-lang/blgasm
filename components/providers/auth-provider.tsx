@@ -33,6 +33,7 @@ const DEMO_USER: AppUser = {
   email: "demo@blgasm.local",
   isDemo: true,
 };
+const REMEMBERED_USER_KEY = "blgasm-remembered-user";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -44,6 +45,36 @@ function mapFirebaseUser(user: User): AppUser {
   };
 }
 
+function readRememberedUser() {
+  try {
+    const value = window.localStorage.getItem(REMEMBERED_USER_KEY);
+    if (!value) {
+      return null;
+    }
+
+    const parsed = JSON.parse(value) as Partial<AppUser>;
+    if (!parsed.uid || !parsed.email) {
+      return null;
+    }
+
+    return {
+      uid: parsed.uid,
+      email: parsed.email,
+      isDemo: false,
+    } satisfies AppUser;
+  } catch {
+    return null;
+  }
+}
+
+function rememberUser(user: AppUser) {
+  window.localStorage.setItem(REMEMBERED_USER_KEY, JSON.stringify(user));
+}
+
+function forgetRememberedUser() {
+  window.localStorage.removeItem(REMEMBERED_USER_KEY);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { notify } = useToast();
   const [user, setUser] = useState<AppUser | null>(null);
@@ -51,8 +82,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let settled = false;
+    const rememberedUser = readRememberedUser();
+
+    if (rememberedUser) {
+      setUser(rememberedUser);
+      setLoading(false);
+    }
+
     const fallback = window.setTimeout(() => {
       if (!settled) {
+        if (rememberedUser) {
+          setUser(rememberedUser);
+        }
         setLoading(false);
       }
     }, 1500);
@@ -70,7 +111,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = listenToAuth((firebaseUser) => {
       settled = true;
       window.clearTimeout(fallback);
-      setUser(firebaseUser ? mapFirebaseUser(firebaseUser) : null);
+      if (firebaseUser) {
+        const appUser = mapFirebaseUser(firebaseUser);
+        rememberUser(appUser);
+        setUser(appUser);
+      } else if (rememberedUser) {
+        setUser(rememberedUser);
+      } else {
+        setUser(null);
+      }
       setLoading(false);
     });
 
@@ -82,8 +131,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      await loginWithEmail(email, password);
+      const credential = await loginWithEmail(email, password);
+      const appUser = mapFirebaseUser(credential.user);
+      rememberUser(appUser);
       window.localStorage.removeItem("blgasm-demo-mode");
+      setUser(appUser);
       notify({ tone: "success", title: "تم تسجيل الدخول بنجاح" });
     },
     [notify],
@@ -91,8 +143,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (email: string, password: string) => {
-      await registerWithEmail(email, password);
+      const credential = await registerWithEmail(email, password);
+      const appUser = mapFirebaseUser(credential.user);
+      rememberUser(appUser);
       window.localStorage.removeItem("blgasm-demo-mode");
+      setUser(appUser);
       notify({ tone: "success", title: "تم إنشاء الحساب" });
     },
     [notify],
@@ -108,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     window.localStorage.removeItem("blgasm-demo-mode");
+    forgetRememberedUser();
     if (!user?.isDemo) {
       await firebaseLogout();
     }

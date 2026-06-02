@@ -8,6 +8,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 dist
+release
 coverage
 dev-server*.log
 tsconfig.tsbuildinfo
+android/keystore.properties
+android/keystores/*.jks

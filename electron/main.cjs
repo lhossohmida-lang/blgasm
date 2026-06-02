@@ -10,6 +10,16 @@ function appRoot() {
   return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, "..");
 }
 
+function publicAssetPath(fileName) {
+  const root = appRoot();
+  const candidates = [
+    path.join(root, "public", fileName),
+    path.join(root, ".next", "standalone", "public", fileName),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+}
+
 function findFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -84,14 +94,13 @@ async function createMainWindow() {
   }
 
   const startUrl = await appUrlPromise;
-  const root = appRoot();
   const window = new BrowserWindow({
     width: 1280,
     height: 900,
     minWidth: 1024,
     minHeight: 720,
     title: "Blgasm POS",
-    icon: path.join(root, "public", "blgasm-logo.png"),
+    icon: publicAssetPath("blgasm-icon.ico"),
     backgroundColor: "#fbfff8",
     webPreferences: {
       contextIsolation: true,

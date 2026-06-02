@@ -7,6 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "build:desktop": "npm run build && node electron/prepare-standalone.cjs && electron-builder --win nsis --x64",
+    "build:android:web": "node scripts/build-android-web.cjs",
+    "android:sync": "npm run build:android:web && npx cap sync android",
+    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug",
     "desktop:dir": "npm run build && node electron/prepare-standalone.cjs && electron-builder --win dir --x64",
     "electron": "electron .",
     "start": "next start",
@@ -14,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/core": "^7.4.3",
     "@openrouter/sdk": "^0.12.79",
     "@zxing/browser": "^0.2.0",
     "firebase": "^12.14.0",
@@ -31,6 +35,8 @@
     "@types/jpeg-js": "^0.3.7",
     "@types/node": "^22.10.2",
     "@types/pngjs": "^6.0.5",
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.4.3",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",
@@ -55,6 +61,7 @@
     ],
     "asar": false,
     "win": {
+      "icon": "build/blgasm-icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -66,6 +73,8 @@
       "artifactName": "Blgasm-POS-Setup-${version}.${ext}"
     },
     "nsis": {
+      "installerIcon": "build/blgasm-icon.ico",
+      "uninstallerIcon": "build/blgasm-icon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
