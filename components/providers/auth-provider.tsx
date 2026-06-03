@@ -34,6 +34,7 @@ const DEMO_USER: AppUser = {
   isDemo: true,
 };
 const REMEMBERED_USER_KEY = "blgasm-remembered-user";
+const SAVED_EMAIL_KEY = "blgasm-saved-email";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -69,6 +70,7 @@ function readRememberedUser() {
 
 function rememberUser(user: AppUser) {
   window.localStorage.setItem(REMEMBERED_USER_KEY, JSON.stringify(user));
+  window.localStorage.setItem(SAVED_EMAIL_KEY, user.email);
 }
 
 function forgetRememberedUser() {

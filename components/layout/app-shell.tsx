@@ -61,15 +61,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading, logout, login } = useAuth();
   const { data, loading: storeLoading, isOnline, pendingSyncCount, syncNow } = useStore();
   const { notify } = useToast();
+  const [shortcutProductIds, setShortcutProductIds] = useState<string[]>([]);
 
-  const shortcutProductIds = useMemo(() => {
-    if (typeof window === "undefined") return [] as string[];
-    try {
-      const stored = window.localStorage.getItem("blgasm-inventory-shortcuts");
-      if (!stored) return [] as string[];
-      const parsed = JSON.parse(stored) as string[];
-      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-    } catch { return [] as string[]; }
+  useEffect(() => {
+    function readShortcutProductIds() {
+      if (typeof window === "undefined") return [] as string[];
+      try {
+        const stored = window.localStorage.getItem("blgasm-inventory-shortcuts");
+        if (!stored) return [] as string[];
+        const parsed = JSON.parse(stored) as string[];
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [] as string[];
+      }
+    }
+
+    function refreshShortcuts() {
+      setShortcutProductIds(readShortcutProductIds());
+    }
+
+    refreshShortcuts();
+    window.addEventListener("blgasm-shortcuts-updated", refreshShortcuts);
+    window.addEventListener("storage", refreshShortcuts);
+    return () => {
+      window.removeEventListener("blgasm-shortcuts-updated", refreshShortcuts);
+      window.removeEventListener("storage", refreshShortcuts);
+    };
   }, []);
 
   const shortcutProducts = useMemo(
@@ -86,12 +103,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [lockPassword, setLockPassword] = useState("");
   const [lockLoading, setLockLoading] = useState(false);
   const [isLocked, setIsLocked] = useState(() => {
-    if (typeof window !== "undefined") {
+    try {
       const savedEmail = window.localStorage.getItem("blgasm-saved-email");
       const demoEnabled = window.localStorage.getItem("blgasm-demo-mode") === "1";
       return Boolean(savedEmail) && !demoEnabled;
+    } catch {
+      return false;
     }
-    return false;
   });
 
   useEffect(() => {

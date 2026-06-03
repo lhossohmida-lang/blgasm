@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, Box, Filter, Grid2X2, Pencil, Plus, QrCode, Search, SlidersHorizontal, Star, Trash2, X, Zap } from "lucide-react";
+import { AlertTriangle, Box, Filter, Grid2X2, Pencil, Plus, QrCode, Save, Search, SlidersHorizontal, Star, Trash2, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProductForm } from "@/components/products/product-form";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/components/providers/store-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import type { Product } from "@/types";
 import { formatCurrency, formatNumber, formatStockQuantity, unitPriceLabel } from "@/utils/format";
 import { cn } from "@/utils/cn";
@@ -59,6 +60,7 @@ function statusFor(product: Product) {
 
 export default function InventoryPage() {
   const { data, deleteProduct } = useStore();
+  const { notify } = useToast();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [editing, setEditing] = useState<Product | null>(null);
@@ -68,6 +70,7 @@ export default function InventoryPage() {
     if (typeof window === "undefined") return Array(9).fill("");
     return loadShortcuts();
   });
+  const [shortcutsDirty, setShortcutsDirty] = useState(false);
   const [assigningSlot, setAssigningSlot] = useState<number | null>(null);
 
   const categories = useMemo(
@@ -101,7 +104,7 @@ export default function InventoryPage() {
     const next = [...shortcuts];
     next[index] = productId;
     setShortcuts(next);
-    saveShortcuts(next);
+    setShortcutsDirty(true);
     setAssigningSlot(null);
   }
 
@@ -109,7 +112,14 @@ export default function InventoryPage() {
     const next = [...shortcuts];
     next[index] = "";
     setShortcuts(next);
-    saveShortcuts(next);
+    setShortcutsDirty(true);
+  }
+
+  function persistShortcuts() {
+    saveShortcuts(shortcuts);
+    setShortcutsDirty(false);
+    window.dispatchEvent(new CustomEvent("blgasm-shortcuts-updated", { detail: { shortcuts } }));
+    notify({ tone: "success", title: "تم حفظ الاختصارات بنجاح" });
   }
 
   if (!data) {
@@ -222,6 +232,11 @@ export default function InventoryPage() {
               <button onClick={() => setAssigningSlot(null)} className="w-full text-sm font-bold text-market-ink/45 underline">إلغاء</button>
             </div>
           ) : null}
+
+          <Button type="button" className="w-full" onClick={persistShortcuts} disabled={!shortcutsDirty}>
+            <Save className="h-4 w-4" />
+            حفظ الاختصارات
+          </Button>
         </div>
       ) : null}
 

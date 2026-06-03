@@ -14,6 +14,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { flushSyncQueue } from "@/lib/firebase/offlineSync";
+import { fetchRemoteAppData } from "@/lib/firebase/firestore";
 import {
   createSyncOperation,
   enqueueLocalOperation,
@@ -98,7 +99,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const next = local ?? createInitialData(user.uid);
+      let next = local ?? createInitialData(user.uid);
       if (!local) {
         const op = user.isDemo ? null : createSyncOperation("store.upsert", next.store, next.store.id);
         next.syncQueue = op ? [op] : [];
@@ -106,6 +107,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (op) {
           await enqueueLocalOperation(next.store.id, op);
         }
+      }
+
+      const hasPendingLocalChanges = next.syncQueue.some((operation) => operation.status !== "synced");
+      if (!user.isDemo && isOnline && (!local || !hasPendingLocalChanges)) {
+        next = await fetchRemoteAppData(next);
+        await saveLocalAppData(next);
       }
 
       setData(next);
@@ -124,7 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [notify, user]);
+  }, [isOnline, notify, user]);
 
   const commit = useCallback(async (nextData: AppData, operations: SyncOperation[] = []) => {
     const next = stamp({
@@ -143,21 +150,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     const unsynced = data.syncQueue.filter((operation) => operation.status !== "synced");
-    if (!unsynced.length) {
-      return;
-    }
-
     syncingRef.current = true;
     try {
-      const synced = await flushSyncQueue(data.store.id, unsynced);
-      const syncedById = new Map(synced.map((operation) => [operation.id, operation]));
-      const merged = data.syncQueue
-        .map((operation) => syncedById.get(operation.id) ?? operation)
-        .filter((operation, index, queue) => operation.status !== "synced" || index > queue.length - 30);
-      const next = stamp({ ...data, syncQueue: merged });
+      let next = data;
+      let synced: SyncOperation[] = [];
+
+      if (unsynced.length) {
+        synced = await flushSyncQueue(data.store.id, unsynced);
+        const syncedById = new Map(synced.map((operation) => [operation.id, operation]));
+        const merged = data.syncQueue
+          .map((operation) => syncedById.get(operation.id) ?? operation)
+          .filter((operation, index, queue) => operation.status !== "synced" || index > queue.length - 30);
+        next = stamp({ ...data, syncQueue: merged });
+        await replaceLocalQueue(next.store.id, merged);
+      }
+
+      next = await fetchRemoteAppData(next);
       setData(next);
       await saveLocalAppData(next);
-      await replaceLocalQueue(next.store.id, merged);
 
       if (synced.some((operation) => operation.status === "synced")) {
         notify({ tone: "success", title: "تمت المزامنة بنجاح" });
