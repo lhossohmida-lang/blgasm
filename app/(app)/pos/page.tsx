@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { Banknote, Minus, Percent, Plus, QrCode, ReceiptText, Tag, Trash2, UserPlus, Zap, Printer } from "lucide-react";
+import { Banknote, Camera, Minus, Percent, Plus, QrCode, ReceiptText, Tag, Trash2, UserPlus, Zap, Printer } from "lucide-react";
 import { KeyboardScanner } from "@/components/scanner/keyboard-scanner";
+import { QrCameraScanner } from "@/components/scanner/qr-camera-scanner";
 import { Receipt } from "@/components/print/receipt";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -53,6 +54,7 @@ export default function PosPage() {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [focusProductId, setFocusProductId] = useState("");
   const [cartInputValues, setCartInputValues] = useState<Record<string, string>>({});
   const [discountAmount, setDiscountAmount] = useState(0);
@@ -94,6 +96,13 @@ export default function PosPage() {
       return;
     }
     addItem(product);
+  }
+
+  function addByCameraScan(code: string) {
+    const cleanCode = code.trim();
+    setQr(cleanCode);
+    addByCode(cleanCode);
+    setShowCameraScanner(false);
   }
 
   useEffect(() => {
@@ -286,6 +295,14 @@ export default function PosPage() {
                   مسح
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={() => setShowCameraScanner((value) => !value)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-leaf-50 text-leaf-700 transition hover:bg-leaf-100"
+                title="فتح كاميرا الهاتف"
+              >
+                <Camera className="h-5 w-5" />
+              </button>
               <button onClick={() => addByCode(qr)} className="text-sm font-black text-leaf-700">إضافة</button>
             </div>
 
@@ -309,6 +326,25 @@ export default function PosPage() {
               </div>
             ) : null}
           </div>
+
+          {showCameraScanner ? (
+            <div className="ios-card-tight space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 font-black">
+                  <Camera className="h-5 w-5 text-leaf-700" />
+                  مسح QR بالكاميرا
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCameraScanner(false)}
+                  className="text-sm font-bold text-market-ink/45 hover:text-market-ink"
+                >
+                  إغلاق
+                </button>
+              </div>
+              <QrCameraScanner onScan={addByCameraScan} />
+            </div>
+          ) : null}
 
           <div className="ios-card-tight grid grid-cols-2 gap-2 p-2">
             {(["cash", "credit"] as SaleType[]).map((type) => (
