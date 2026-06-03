@@ -9,7 +9,6 @@ import {
   registerWithEmail,
   resetPassword,
 } from "@/lib/firebase/auth";
-import { enableFirebaseOfflinePersistence } from "@/lib/firebase/firebase";
 import { useToast } from "@/components/providers/toast-provider";
 
 export interface AppUser {
@@ -100,7 +99,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, 1500);
 
-    enableFirebaseOfflinePersistence();
     const demoEnabled = window.localStorage.getItem("blgasm-demo-mode") === "1";
     if (demoEnabled) {
       settled = true;
