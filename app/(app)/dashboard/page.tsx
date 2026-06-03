@@ -7,7 +7,6 @@ import {
   Box,
   CalendarDays,
   CheckCircle2,
-  Lock,
   Package,
   ReceiptText,
   ShoppingBag,
@@ -21,9 +20,9 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { buildSmartAlerts } from "@/utils/alerts";
 import { formatCurrency, formatNumber } from "@/utils/format";
 import { useState, useCallback } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { PinGate } from "@/components/auth/pin-gate";
 import { useToast } from "@/components/providers/toast-provider";
+import { Button } from "@/components/ui/button";
 
 function HeroMetric({
   title,
@@ -69,27 +68,27 @@ function ProductMini({ name, value, image, rank }: { name: string; value: string
 }
 
 // ──── Password gate for the dashboard ────────────────────────────
+const DASHBOARD_PIN = "111234";
+
 function DashboardPasswordGate({ onUnlock }: { onUnlock: () => void }) {
-  const { user, login } = useAuth();
   const { notify } = useToast();
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    (e: React.FormEvent) => {
       e.preventDefault();
-      if (!user) return;
       setLoading(true);
-      try {
-        await login(user.email, password);
-        onUnlock();
-      } catch {
-        notify({ tone: "error", title: "كلمة المرور غير صحيحة", body: "أدخل كلمة مرور حسابك على Firebase." });
-      } finally {
+      setTimeout(() => {
+        if (password === DASHBOARD_PIN) {
+          onUnlock();
+        } else {
+          notify({ tone: "error", title: "كلمة المرور غير صحيحة", body: "حاول مرة أخرى." });
+        }
         setLoading(false);
-      }
+      }, 400);
     },
-    [login, notify, onUnlock, password, user],
+    [notify, onUnlock, password],
   );
 
   return (
@@ -101,7 +100,7 @@ function DashboardPasswordGate({ onUnlock }: { onUnlock: () => void }) {
           </div>
           <h2 className="text-xl font-black">لوحة التحكم محمية</h2>
           <p className="text-sm text-market-ink/60 dark:text-white/60">
-            أدخل كلمة مرور حسابك على Firebase للمتابعة
+            أدخل رمز الدخول للمتابعة
           </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
