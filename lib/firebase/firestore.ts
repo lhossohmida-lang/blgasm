@@ -74,7 +74,11 @@ export async function fetchRemoteAppData(local: AppData): Promise<AppData> {
     query(collection(db, "stores", storeId, "syncQueue"), where("status", "!=", "synced")),
   );
 
-  const remoteCustomers = customers.docs.map((item) => item.data() as CreditCustomer);
+  const remoteProducts = products.empty ? [] : products.docs.map((item) => item.data() as Product);
+  const remoteSales = sales.empty ? [] : sales.docs.map((item) => item.data() as Sale);
+  const remoteCustomers = customers.empty ? [] : customers.docs.map((item) => item.data() as CreditCustomer);
+  const remoteQueue = queue.docs.map((item) => item.data() as SyncOperation);
+
   const transactions: CreditTransaction[] = [];
   await Promise.all(
     remoteCustomers.map(async (customer) => {
@@ -85,13 +89,39 @@ export async function fetchRemoteAppData(local: AppData): Promise<AppData> {
     }),
   );
 
+  // Merge products: Keep remote products, but also keep local products that have pending sync operations (i.e. added/updated offline)
+  const pendingProductIds = new Set(
+    remoteQueue
+      .filter((op) => op.operationType === "product.upsert" && op.status !== "synced")
+      .map((op) => (op.payload as Product).id)
+  );
+  const mergedProducts = [...remoteProducts];
+  local.products.forEach((localProd) => {
+    if (pendingProductIds.has(localProd.id) && !mergedProducts.some((p) => p.id === localProd.id)) {
+      mergedProducts.push(localProd);
+    }
+  });
+
+  // Merge customers
+  const pendingCustomerIds = new Set(
+    remoteQueue
+      .filter((op) => op.operationType === "customer.upsert" && op.status !== "synced")
+      .map((op) => (op.payload as CreditCustomer).id)
+  );
+  const mergedCustomers = [...remoteCustomers];
+  local.creditCustomers.forEach((localCust) => {
+    if (pendingCustomerIds.has(localCust.id) && !mergedCustomers.some((c) => c.id === localCust.id)) {
+      mergedCustomers.push(localCust);
+    }
+  });
+
   return {
     ...local,
-    products: products.empty ? local.products : products.docs.map((item) => item.data() as Product),
-    sales: sales.empty ? local.sales : sales.docs.map((item) => item.data() as Sale),
-    creditCustomers: customers.empty ? local.creditCustomers : remoteCustomers,
+    products: mergedProducts,
+    sales: remoteSales.length ? remoteSales : local.sales,
+    creditCustomers: mergedCustomers,
     creditTransactions: transactions.length ? transactions : local.creditTransactions,
-    syncQueue: queue.docs.map((item) => item.data() as SyncOperation),
+    syncQueue: remoteQueue,
     updatedAt: new Date().toISOString(),
   };
 }

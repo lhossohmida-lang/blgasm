@@ -118,10 +118,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const hasPendingLocalChanges = next.syncQueue.some((operation) => operation.status !== "synced");
-      if (!user.isDemo && isOnline && (!local || !hasPendingLocalChanges)) {
-        next = await fetchRemoteAppData(next);
-        await saveLocalAppData(next);
+      if (!user.isDemo && isOnline) {
+        try {
+          next = await fetchRemoteAppData(next);
+          await saveLocalAppData(next);
+        } catch (err) {
+          console.error("Failed to fetch remote app data during load:", err);
+        }
       }
 
       setData(next);
@@ -210,6 +213,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const remoteSales = snapshot.docs.map((d) => d.data() as Sale);
         updateDataFromRemote((prev) => ({ ...prev, sales: remoteSales }));
       },
+      (error) => {
+        console.error("Sales listener error:", error);
+      }
     );
 
     const productsUnsub = onSnapshot(
@@ -218,6 +224,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const remoteProducts = snapshot.docs.map((d) => d.data() as Product);
         updateDataFromRemote((prev) => ({ ...prev, products: remoteProducts }));
       },
+      (error) => {
+        console.error("Products listener error:", error);
+      }
     );
 
     const customersUnsub = onSnapshot(
@@ -226,6 +235,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const remoteCustomers = snapshot.docs.map((d) => d.data() as CreditCustomer);
         updateDataFromRemote((prev) => ({ ...prev, creditCustomers: remoteCustomers }));
       },
+      (error) => {
+        console.error("Customers listener error:", error);
+      }
     );
 
     return () => {
