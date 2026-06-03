@@ -175,8 +175,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         next = { ...next, store: { ...next.store, id: resolvedStoreId, ownerId: user!.uid } };
       }
 
-      // 3. If online, pull fresh data from Firebase
-      if (isOnline && !user!.isDemo) {
+      // 3. If online and verified, pull fresh data from Firebase
+      if (isOnline && !user!.isDemo && user!.isVerified) {
         try {
           // Ensure store document exists in Firebase
           await fbEnsureStore(resolvedStoreId, user!.uid, next.store.name);
@@ -221,11 +221,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, isOnline]);
+  }, [user?.uid, user?.isVerified, isOnline]);
 
   // ── Real-time listeners (created once per storeId) ──────────────────────
   useEffect(() => {
-    if (!user || user.isDemo || loading) return;
+    if (!user || user.isDemo || !user.isVerified || loading) return;
     const storeId = storeIdRef.current;
     if (!storeId) return;
 
@@ -288,11 +288,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   // Only re-run when user or loading status changes — NOT on every data change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, loading]);
+  }, [user?.uid, user?.isVerified, loading]);
 
   // ── syncNow: flush offline queue + re-pull from Firebase ───────────────
   const syncNow = useCallback(async (silent = false) => {
-    if (!data || !isOnline || user?.isDemo || syncing) return;
+    if (!data || !isOnline || user?.isDemo || !user?.isVerified || syncing) return;
     const storeId = storeIdRef.current;
     if (!storeId) return;
 
@@ -340,11 +340,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── Auto-sync on reconnect ──────────────────────────────────────────────
   const prevOnlineRef = useRef(false);
   useEffect(() => {
-    if (isOnline && !prevOnlineRef.current && data && !user?.isDemo) {
+    if (isOnline && !prevOnlineRef.current && data && !user?.isDemo && user?.isVerified) {
       syncNow(true);
     }
     prevOnlineRef.current = isOnline;
-  }, [isOnline, data, user?.isDemo, syncNow]);
+  }, [isOnline, data, user?.isDemo, user?.isVerified, syncNow]);
 
   // ── Write to Firebase then update local state ───────────────────────────
   // Helper: optimistic local update + Firebase write (with offline fallback)

@@ -15,6 +15,7 @@ export interface AppUser {
   uid: string;
   email: string;
   isDemo: boolean;
+  isVerified: boolean; // true only when Firebase Auth has confirmed the session
 }
 
 interface AuthContextValue {
@@ -31,6 +32,7 @@ const DEMO_USER: AppUser = {
   uid: "local-demo-store",
   email: "demo@blgasm.local",
   isDemo: true,
+  isVerified: false,
 };
 const REMEMBERED_USER_KEY = "blgasm-remembered-user";
 const SAVED_EMAIL_KEY = "blgasm-saved-email";
@@ -42,6 +44,7 @@ function mapFirebaseUser(user: User): AppUser {
     uid: user.uid,
     email: user.email ?? "merchant@blgasm.local",
     isDemo: false,
+    isVerified: true, // confirmed by Firebase Auth
   };
 }
 
@@ -61,6 +64,7 @@ function readRememberedUser() {
       uid: parsed.uid,
       email: parsed.email,
       isDemo: false,
+      isVerified: false, // NOT verified — just from localStorage cache
     } satisfies AppUser;
   } catch {
     return null;
