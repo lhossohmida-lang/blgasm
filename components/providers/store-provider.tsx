@@ -23,6 +23,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 import {
@@ -148,21 +149,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async function load() {
       setLoading(true);
 
-      // 1. Get local snapshot first (fast start)
-      const local = await getLocalAppData(user!.uid);
-      let next = local ?? createInitialData(user!.uid);
+      // 1. Determine the real storeId:
+      //    - From Firebase /users/{uid}.storeId (most authoritative)
+      //    - From local IndexedDB store.id
+      //    - Fallback to user.uid
+      let resolvedStoreId = user!.uid;
+      if (isOnline && !user!.isDemo) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", user!.uid));
+          if (userDoc.exists() && userDoc.data().storeId) {
+            resolvedStoreId = userDoc.data().storeId as string;
+          }
+        } catch {
+          // ignore — use default
+        }
+      }
 
-      // 2. If online, pull fresh data from Firebase
+      // 2. Get local snapshot (keyed by user.uid for lookup, but use resolvedStoreId)
+      const localByUid = await getLocalAppData(user!.uid);
+      const localByStore = resolvedStoreId !== user!.uid ? await getLocalAppData(resolvedStoreId) : null;
+      const local = localByStore ?? localByUid;
+      let next = local ?? createInitialData(resolvedStoreId);
+      // Ensure store.id matches resolvedStoreId
+      if (next.store.id !== resolvedStoreId) {
+        next = { ...next, store: { ...next.store, id: resolvedStoreId, ownerId: user!.uid } };
+      }
+
+      // 3. If online, pull fresh data from Firebase
       if (isOnline && !user!.isDemo) {
         try {
           // Ensure store document exists in Firebase
-          await fbEnsureStore(next.store.id, user!.uid, next.store.name);
+          await fbEnsureStore(resolvedStoreId, user!.uid, next.store.name);
           // Pull all collections
           const [prodSnap, salesSnap, custSnap, txSnap] = await Promise.all([
-            getDocs(collection(db, "stores", next.store.id, "products")),
-            getDocs(collection(db, "stores", next.store.id, "sales")),
-            getDocs(collection(db, "stores", next.store.id, "creditCustomers")),
-            getDocs(collection(db, "stores", next.store.id, "creditTransactions")),
+            getDocs(collection(db, "stores", resolvedStoreId, "products")),
+            getDocs(collection(db, "stores", resolvedStoreId, "sales")),
+            getDocs(collection(db, "stores", resolvedStoreId, "creditCustomers")),
+            getDocs(collection(db, "stores", resolvedStoreId, "creditTransactions")),
           ]);
           next = {
             ...next,
