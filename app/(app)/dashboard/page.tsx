@@ -7,16 +7,23 @@ import {
   Box,
   CalendarDays,
   CheckCircle2,
+  Lock,
   Package,
   ReceiptText,
   ShoppingBag,
+  Trash2,
   TrendingUp,
   Wallet,
   Wifi,
 } from "lucide-react";
 import { useStore } from "@/components/providers/store-provider";
+import { useAuth } from "@/components/providers/auth-provider";
 import { buildSmartAlerts } from "@/utils/alerts";
 import { formatCurrency, formatNumber } from "@/utils/format";
+import { useState, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/providers/toast-provider";
 
 function HeroMetric({
   title,
@@ -61,16 +68,128 @@ function ProductMini({ name, value, image, rank }: { name: string; value: string
   );
 }
 
+// ──── Password gate for the dashboard ────────────────────────────
+function DashboardPasswordGate({ onUnlock }: { onUnlock: () => void }) {
+  const { user, login } = useAuth();
+  const { notify } = useToast();
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!user) return;
+      setLoading(true);
+      try {
+        await login(user.email, password);
+        onUnlock();
+      } catch {
+        notify({ tone: "error", title: "كلمة المرور غير صحيحة", body: "أدخل كلمة مرور حسابك على Firebase." });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [login, notify, onUnlock, password, user],
+  );
+
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="w-full max-w-sm space-y-6 rounded-[28px] border border-black/5 bg-white p-8 shadow-2xl dark:border-white/10 dark:bg-market-ink">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-leaf-100 text-leaf-600 dark:bg-leaf-900/40 dark:text-leaf-300">
+            <Lock className="h-7 w-7" />
+          </div>
+          <h2 className="text-xl font-black">لوحة التحكم محمية</h2>
+          <p className="text-sm text-market-ink/60 dark:text-white/60">
+            أدخل كلمة مرور حسابك على Firebase للمتابعة
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="كلمة المرور"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+          />
+          <Button className="h-12 w-full rounded-2xl bg-leaf-600 text-white hover:bg-leaf-500 border-none font-black" loading={loading}>
+            فتح لوحة التحكم
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ──── Sales log row ────────────────────────────────────────────────
+function SaleRow({ sale, onDelete }: { sale: { id: string; receiptNumber: string; type: string; totalAmount: number; createdAt: string; customerName?: string }; onDelete: (id: string) => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!confirming) { setConfirming(true); return; }
+    setDeleting(true);
+    await onDelete(sale.id);
+    setDeleting(false);
+    setConfirming(false);
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-black/5 dark:border-white/10 last:border-0">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="ios-icon h-10 w-10 rounded-2xl shrink-0">
+          <ShoppingBag className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="font-black truncate">{sale.receiptNumber}</p>
+          <p className="text-xs text-market-ink/55 dark:text-white/55">
+            {sale.type === "cash" ? "نقدي" : `كريدي${sale.customerName ? ` • ${sale.customerName}` : ""}`}
+            {" · "}
+            {new Date(sale.createdAt).toLocaleDateString("ar-DZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className={`flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black transition ${
+            confirming
+              ? "bg-red-500 text-white hover:bg-red-600"
+              : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40"
+          }`}
+          title="حذف (إعادة البضاعة)"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {confirming ? "تأكيد؟" : "إرجاع"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ──── Main page ────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { data, stats, isOnline } = useStore();
+  const { data, stats, isOnline, deleteSale } = useStore();
+  const { user } = useAuth();
+  const [unlocked, setUnlocked] = useState(false);
 
   if (!data || !stats) {
     return null;
   }
 
+  // Demo users skip password gate
+  const needsPassword = user && !user.isDemo && !unlocked;
+  if (needsPassword) {
+    return <DashboardPasswordGate onUnlock={() => setUnlocked(true)} />;
+  }
+
   const alerts = buildSmartAlerts(data, isOnline);
   const lowStock = data.products.filter((product) => product.quantity <= product.lowStockAlert).slice(0, 1);
-  const recentSales = data.sales.slice(0, 3);
+  const allSales = [...data.sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const topProducts = stats.topProducts.length
     ? stats.topProducts
     : data.products.slice(0, 3).map((product) => ({ name: product.name, quantity: product.quantity, total: product.sellPrice }));
@@ -121,31 +240,27 @@ export default function DashboardPage() {
         </div>
       </Link>
 
-      <section className="mt-5 grid gap-5 lg:grid-cols-2">
+      {/* Sales log — full, with delete */}
+      <section className="mt-5">
         <div className="ios-card">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-black">أحدث المبيعات</h2>
-            <Link href="/pos" className="text-sm font-bold text-leaf-700">عرض الكل</Link>
+            <h2 className="text-xl font-black">سجل المبيعات الكامل</h2>
+            <span className="rounded-full bg-leaf-100 px-3 py-1 text-xs font-black text-leaf-700 dark:bg-leaf-900/30 dark:text-leaf-300">
+              {formatNumber(allSales.length)} عملية
+            </span>
           </div>
-          <div className="divide-y divide-black/5 dark:divide-white/10">
-            {recentSales.map((sale) => (
-                <div key={sale.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="ios-icon h-10 w-10 rounded-2xl">
-                      <ShoppingBag className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-black">{sale.receiptNumber}</p>
-                      <p className="text-xs text-market-ink/55">{sale.type === "cash" ? "نقدي" : "كريدي"}</p>
-                    </div>
-                  </div>
-                  <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
-                </div>
-              ))}
-            {!recentSales.length ? <p className="py-4 text-center text-sm font-bold text-market-ink/50">لا توجد مبيعات</p> : null}
+          <div className="max-h-[500px] overflow-y-auto -mx-1 px-1">
+            {allSales.length === 0 && (
+              <p className="py-8 text-center text-sm font-bold text-market-ink/50 dark:text-white/40">لا توجد مبيعات بعد</p>
+            )}
+            {allSales.map((sale) => (
+              <SaleRow key={sale.id} sale={sale} onDelete={deleteSale} />
+            ))}
           </div>
         </div>
+      </section>
 
+      <section className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="ios-card">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-black">المنتجات الأكثر مبيعاً</h2>
@@ -166,21 +281,21 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-      </section>
 
-      <section className="mt-5 grid gap-4 lg:grid-cols-3">
-        <div className="ios-card">
-          <p className="text-sm text-market-ink/55">عدد المنتجات</p>
-          <p className="mt-2 text-3xl font-black">{formatNumber(stats.productCount)}</p>
-        </div>
-        <div className="ios-card">
-          <p className="text-sm text-market-ink/55">إجمالي الديون</p>
-          <p className="mt-2 text-3xl font-black">{formatCurrency(stats.totalDebt)}</p>
-        </div>
-        <div className="ios-card">
-          <p className="text-sm text-market-ink/55">تنبيهات ذكية</p>
-          <p className="mt-2 text-3xl font-black">{formatNumber(alerts.length + lowStock.length)}</p>
-        </div>
+        <section className="grid gap-4 grid-cols-1 content-start">
+          <div className="ios-card">
+            <p className="text-sm text-market-ink/55">عدد المنتجات</p>
+            <p className="mt-2 text-3xl font-black">{formatNumber(stats.productCount)}</p>
+          </div>
+          <div className="ios-card">
+            <p className="text-sm text-market-ink/55">إجمالي الديون</p>
+            <p className="mt-2 text-3xl font-black">{formatCurrency(stats.totalDebt)}</p>
+          </div>
+          <div className="ios-card">
+            <p className="text-sm text-market-ink/55">تنبيهات ذكية</p>
+            <p className="mt-2 text-3xl font-black">{formatNumber(alerts.length + lowStock.length)}</p>
+          </div>
+        </section>
       </section>
     </div>
   );

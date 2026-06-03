@@ -3,6 +3,7 @@
 import {
   deleteCreditCustomer,
   deleteProduct,
+  deleteSale,
   ensureStore,
   writeCreditCustomer,
   writeCreditTransaction,
@@ -41,6 +42,9 @@ export async function flushSyncQueue(storeId: string, queue: SyncOperation[]) {
           break;
         case "sale.create":
           await writeSale(storeId, operation.payload as Sale);
+          break;
+        case "sale.delete":
+          await deleteSale(storeId, String(operation.entityId));
           break;
         case "customer.upsert":
           await writeCreditCustomer(storeId, operation.payload as CreditCustomer);

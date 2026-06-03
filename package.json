@@ -14,7 +14,8 @@
     "electron": "electron .",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy:rules": "npx -y firebase-tools deploy --only firestore:rules --project blgasm"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

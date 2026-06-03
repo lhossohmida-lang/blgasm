@@ -41,6 +41,10 @@ export async function writeSale(storeId: string, sale: Sale) {
   await setDoc(doc(db, "stores", storeId, "sales", sale.id), sale, { merge: true });
 }
 
+export async function deleteSale(storeId: string, saleId: string) {
+  await deleteDoc(doc(db, "stores", storeId, "sales", saleId));
+}
+
 export async function writeCreditCustomer(storeId: string, customer: CreditCustomer) {
   await setDoc(doc(db, "stores", storeId, "creditCustomers", customer.id), customer, { merge: true });
 }

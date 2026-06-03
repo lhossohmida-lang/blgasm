@@ -15,6 +15,7 @@ export type SyncOperationType =
   | "product.upsert"
   | "product.delete"
   | "sale.create"
+  | "sale.delete"
   | "customer.upsert"
   | "customer.delete"
   | "transaction.create";

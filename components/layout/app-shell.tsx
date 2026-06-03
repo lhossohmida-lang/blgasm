@@ -20,8 +20,6 @@ import {
   UsersRound,
   Wifi,
   WifiOff,
-  Lock,
-  EyeOff,
   Zap,
   Tag,
 } from "lucide-react";
@@ -33,7 +31,6 @@ import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/utils/cn";
 import { useToast } from "@/components/providers/toast-provider";
-import { Input } from "@/components/ui/input";
 
 const desktopNav = [
   { href: "/dashboard", label: "لوحة التحكم", icon: Home },
@@ -58,9 +55,8 @@ const bottomNav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading: authLoading, logout, login } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const { data, loading: storeLoading, isOnline, pendingSyncCount, syncNow } = useStore();
-  const { notify } = useToast();
   const [shortcutProductIds, setShortcutProductIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -100,17 +96,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }, [shortcutProducts]);
   const [dark, setDark] = useState(false);
-  const [lockPassword, setLockPassword] = useState("");
-  const [lockLoading, setLockLoading] = useState(false);
-  const [isLocked, setIsLocked] = useState(() => {
-    try {
-      const savedEmail = window.localStorage.getItem("blgasm-saved-email");
-      const demoEnabled = window.localStorage.getItem("blgasm-demo-mode") === "1";
-      return Boolean(savedEmail) && !demoEnabled;
-    } catch {
-      return false;
-    }
-  });
 
   useEffect(() => {
     const stored = window.localStorage.getItem("blgasm-theme");
@@ -126,25 +111,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", next);
   }
 
-  async function handleUnlock(e: React.FormEvent) {
-    e.preventDefault();
-    if (!user) return;
-    setLockLoading(true);
-    try {
-      await login(user.email, lockPassword);
-      setIsLocked(false);
-      setLockPassword("");
-      notify({ tone: "success", title: "تم فتح القفل بنجاح" });
-    } catch (error) {
-      notify({
-        tone: "error",
-        title: "رمز المرور غير صحيح",
-        body: "الرجاء إدخال كلمة مرور الحساب الصحيحة.",
-      });
-    } finally {
-      setLockLoading(false);
-    }
-  }
 
   if (authLoading) {
     return <LoadingState label="جاري تجهيز التطبيق..." />;
@@ -154,49 +120,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
-  if (isLocked) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-5 bg-gradient-to-tr from-market-ink to-market-ink/90 text-white dark:from-market-ink dark:to-black">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-leaf-950/20 via-transparent to-transparent pointer-events-none" />
-        <div className="w-full max-w-[420px] relative">
-          <div className="ios-card bg-white/10 dark:bg-black/40 border border-white/10 backdrop-blur-xl p-6 rounded-[32px] shadow-2xl text-center space-y-6">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-leaf-500/25 border border-leaf-400/30 text-leaf-400">
-              <Lock className="h-7 w-7 animate-pulse" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black">لوحة التحكم مقفلة</h1>
-              <p className="text-sm text-white/60 mt-1">{user.email}</p>
-            </div>
-            <form onSubmit={handleUnlock} className="space-y-4">
-              <div className="relative text-right">
-                <Input
-                  label="أدخل كلمة مرور الحساب لإلغاء القفل"
-                  type="password"
-                  value={lockPassword}
-                  onChange={(e) => setLockPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="bg-white/5 border-white/15 text-white placeholder:text-white/30 rounded-2xl h-14 text-center text-lg font-black focus:border-leaf-500 focus:bg-white/10"
-                  required
-                />
-              </div>
-              <Button className="h-14 w-full rounded-2xl text-lg font-black bg-leaf-600 hover:bg-leaf-500 text-white border-none" loading={lockLoading}>
-                إلغاء القفل
-              </Button>
-            </form>
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={logout}
-                className="text-sm font-bold text-white/50 hover:text-white underline transition"
-              >
-                تسجيل الخروج أو تغيير الحساب
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  // Lock screen removed — dashboard-level auth only now
+
 
   if (storeLoading || !data) {
     return <LoadingState label="جاري تحميل بيانات المتجر..." />;

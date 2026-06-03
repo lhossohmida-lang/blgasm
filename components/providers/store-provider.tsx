@@ -15,6 +15,14 @@ import { useToast } from "@/components/providers/toast-provider";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { flushSyncQueue } from "@/lib/firebase/offlineSync";
 import { fetchRemoteAppData } from "@/lib/firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  limit,
+} from "firebase/firestore";
 import {
   createSyncOperation,
   enqueueLocalOperation,
@@ -63,6 +71,7 @@ interface StoreContextValue {
   deleteProduct: (productId: string) => Promise<void>;
   findProductByCode: (code: string) => Product | undefined;
   createSale: (input: CreateSaleInput) => Promise<Sale>;
+  deleteSale: (saleId: string) => Promise<void>;
   upsertCustomer: (customer: Partial<CreditCustomer> & { name: string }) => Promise<CreditCustomer>;
   deleteCustomer: (customerId: string) => Promise<void>;
   addPayment: (customerId: string, amount: number, note?: string) => Promise<CreditTransaction>;
@@ -179,6 +188,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       syncingRef.current = false;
     }
   }, [data, isOnline, notify, user?.isDemo]);
+
+  // ──── Real-time listener ────────────────────────────────────────
+  useEffect(() => {
+    if (!user || user.isDemo || !data?.store.id) return;
+
+    const storeId = data.store.id;
+    let initialLoad = true;
+
+    const salesUnsub = onSnapshot(
+      query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(200)),
+      (snapshot) => {
+        if (initialLoad) { initialLoad = false; return; }
+        const remoteSales = snapshot.docs.map((d) => d.data() as Sale);
+        setData((prev) => prev ? { ...prev, sales: remoteSales, updatedAt: new Date().toISOString() } : prev);
+      },
+    );
+
+    const productsUnsub = onSnapshot(
+      collection(db, "stores", storeId, "products"),
+      (snapshot) => {
+        if (initialLoad) return;
+        const remoteProducts = snapshot.docs.map((d) => d.data() as Product);
+        setData((prev) => prev ? { ...prev, products: remoteProducts, updatedAt: new Date().toISOString() } : prev);
+      },
+    );
+
+    const customersUnsub = onSnapshot(
+      collection(db, "stores", storeId, "creditCustomers"),
+      (snapshot) => {
+        if (initialLoad) return;
+        const remoteCustomers = snapshot.docs.map((d) => d.data() as CreditCustomer);
+        setData((prev) => prev ? { ...prev, creditCustomers: remoteCustomers, updatedAt: new Date().toISOString() } : prev);
+      },
+    );
+
+    // Mark initialLoad as done after first snapshot resolves
+    const timer = setTimeout(() => { initialLoad = false; }, 2000);
+
+    return () => {
+      clearTimeout(timer);
+      salesUnsub();
+      productsUnsub();
+      customersUnsub();
+    };
+  }, [user, data?.store.id]);
 
   useEffect(() => {
     if (isOnline) {
@@ -314,6 +368,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return sale;
     },
     [commit, data, notify, user],
+  );
+
+  const deleteSale = useCallback(
+    async (saleId: string) => {
+      if (!data) return;
+
+      const sale = data.sales.find((s) => s.id === saleId);
+      if (!sale) return;
+
+      // Restore inventory quantities
+      const restoredProducts = data.products.map((product) => {
+        const item = sale.items.find((i) => i.productId === product.id);
+        if (!item) return product;
+        return { ...product, quantity: product.quantity + item.quantity };
+      });
+
+      const operations: SyncOperation[] = [
+        createSyncOperation("sale.delete", { saleId }, saleId),
+        ...restoredProducts
+          .filter((p) => data.products.find((old) => old.id === p.id && old.quantity !== p.quantity))
+          .map((p) => createSyncOperation("product.upsert", p, p.id)),
+      ];
+
+      await commit(
+        {
+          ...data,
+          sales: data.sales.filter((s) => s.id !== saleId),
+          products: restoredProducts,
+        },
+        operations,
+      );
+      notify({ tone: "info", title: "تم حذف البيع وإعادة البضاعة للمخزون" });
+    },
+    [commit, data, notify],
   );
 
   const upsertCustomer = useCallback(
@@ -452,6 +540,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteProduct,
       findProductByCode,
       createSale,
+      deleteSale,
       upsertCustomer,
       deleteCustomer,
       addPayment,
@@ -463,6 +552,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       data,
       deleteCustomer,
       deleteProduct,
+      deleteSale,
       findProductByCode,
       isOnline,
       loading,
