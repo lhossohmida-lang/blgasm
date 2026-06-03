@@ -91,6 +91,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
   const syncingRef = useRef(false);
+  const storeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +128,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      storeIdRef.current = next.store.id;
       setData(next);
       setLoading(false);
     }
@@ -202,10 +204,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ──── Real-time listener ────────────────────────────────────────
+  // We use a stable storeId ref so that the listener is NOT re-created
+  // every time `data` changes (which would break real-time sync).
   useEffect(() => {
-    if (!user || user.isDemo || !data?.store.id) return;
+    if (!user || user.isDemo) return;
 
-    const storeId = data.store.id;
+    // Wait until storeId is known (set in load() above)
+    const storeId = storeIdRef.current;
+    if (!storeId) return;
 
     const salesUnsub = onSnapshot(
       query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(200)),
@@ -226,9 +232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, sales: mergedSales.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) };
         });
       },
-      (error) => {
-        console.error("Sales listener error:", error);
-      }
+      (error) => console.error("Sales listener error:", error)
     );
 
     const productsUnsub = onSnapshot(
@@ -241,12 +245,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               .filter((op) => op.operationType === "product.upsert" && op.status !== "synced")
               .map((op) => (op.payload as Product).id)
           );
-          const mergedProducts = remoteProducts.map((p) => {
-            if (pendingProductIds.has(p.id)) {
-              return prev.products.find((lp) => lp.id === p.id) ?? p;
-            }
-            return p;
-          });
+          const mergedProducts = remoteProducts.map((p) =>
+            pendingProductIds.has(p.id) ? (prev.products.find((lp) => lp.id === p.id) ?? p) : p
+          );
           prev.products.forEach((localProd) => {
             if (pendingProductIds.has(localProd.id) && !mergedProducts.some((p) => p.id === localProd.id)) {
               mergedProducts.push(localProd);
@@ -255,9 +256,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, products: mergedProducts };
         });
       },
-      (error) => {
-        console.error("Products listener error:", error);
-      }
+      (error) => console.error("Products listener error:", error)
     );
 
     const customersUnsub = onSnapshot(
@@ -270,12 +269,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               .filter((op) => op.operationType === "customer.upsert" && op.status !== "synced")
               .map((op) => (op.payload as CreditCustomer).id)
           );
-          const mergedCustomers = remoteCustomers.map((c) => {
-            if (pendingCustomerIds.has(c.id)) {
-              return prev.creditCustomers.find((lc) => lc.id === c.id) ?? c;
-            }
-            return c;
-          });
+          const mergedCustomers = remoteCustomers.map((c) =>
+            pendingCustomerIds.has(c.id) ? (prev.creditCustomers.find((lc) => lc.id === c.id) ?? c) : c
+          );
           prev.creditCustomers.forEach((localCust) => {
             if (pendingCustomerIds.has(localCust.id) && !mergedCustomers.some((c) => c.id === localCust.id)) {
               mergedCustomers.push(localCust);
@@ -284,9 +280,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, creditCustomers: mergedCustomers };
         });
       },
-      (error) => {
-        console.error("Customers listener error:", error);
-      }
+      (error) => console.error("Customers listener error:", error)
     );
 
     const transactionsUnsub = onSnapshot(
@@ -308,9 +302,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, creditTransactions: mergedTransactions };
         });
       },
-      (error) => {
-        console.error("Transactions listener error:", error);
-      }
+      (error) => console.error("Transactions listener error:", error)
     );
 
     return () => {
@@ -319,7 +311,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       customersUnsub();
       transactionsUnsub();
     };
-  }, [user, data?.store.id, updateDataFromRemote]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, loading, updateDataFromRemote]);
 
   // Auto-sync when online and there are unsynced operations
   useEffect(() => {
