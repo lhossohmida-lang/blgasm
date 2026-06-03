@@ -5,6 +5,8 @@ import { Banknote, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Printer, 
 import { Button } from "@/components/ui/button";
 import { ReportPrint } from "@/components/print/report-print";
 import { useStore } from "@/components/providers/store-provider";
+import { useAuth } from "@/components/providers/auth-provider";
+import { PinGate } from "@/components/auth/pin-gate";
 import type { DashboardStats, Sale } from "@/types";
 import { computeDashboardStats, roundMoney } from "@/utils/calculations";
 import { formatCurrency } from "@/utils/format";
@@ -51,7 +53,14 @@ function ReportMetric({
 
 export default function ReportsPage() {
   const { data } = useStore();
+  const { user } = useAuth();
+  const [unlocked, setUnlocked] = useState(false);
   const [period, setPeriod] = useState<Period>("day");
+
+  // PIN gate
+  if (!user?.isDemo && !unlocked) {
+    return <PinGate title="التقارير محمية" onUnlock={() => setUnlocked(true)} />;
+  }
 
   const report = useMemo(() => {
     if (!data) return null;

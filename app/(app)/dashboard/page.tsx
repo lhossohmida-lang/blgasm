@@ -67,59 +67,7 @@ function ProductMini({ name, value, image, rank }: { name: string; value: string
   );
 }
 
-// ──── Password gate for the dashboard ────────────────────────────
-const DASHBOARD_PIN = "111234";
 
-function DashboardPasswordGate({ onUnlock }: { onUnlock: () => void }) {
-  const { notify } = useToast();
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      setLoading(true);
-      setTimeout(() => {
-        if (password === DASHBOARD_PIN) {
-          onUnlock();
-        } else {
-          notify({ tone: "error", title: "كلمة المرور غير صحيحة", body: "حاول مرة أخرى." });
-        }
-        setLoading(false);
-      }, 400);
-    },
-    [notify, onUnlock, password],
-  );
-
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-6 rounded-[28px] border border-black/5 bg-white p-8 shadow-2xl dark:border-white/10 dark:bg-market-ink">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-leaf-100 text-leaf-600 dark:bg-leaf-900/40 dark:text-leaf-300">
-            <Lock className="h-7 w-7" />
-          </div>
-          <h2 className="text-xl font-black">لوحة التحكم محمية</h2>
-          <p className="text-sm text-market-ink/60 dark:text-white/60">
-            أدخل رمز الدخول للمتابعة
-          </p>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="كلمة المرور"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-          />
-          <Button className="h-12 w-full rounded-2xl bg-leaf-600 text-white hover:bg-leaf-500 border-none font-black" loading={loading}>
-            فتح لوحة التحكم
-          </Button>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 // ──── Sales log row ────────────────────────────────────────────────
 function SaleRow({ sale, onDelete }: { sale: { id: string; receiptNumber: string; type: string; totalAmount: number; createdAt: string; customerName?: string }; onDelete: (id: string) => void }) {
@@ -183,7 +131,7 @@ export default function DashboardPage() {
   // Demo users skip password gate
   const needsPassword = user && !user.isDemo && !unlocked;
   if (needsPassword) {
-    return <DashboardPasswordGate onUnlock={() => setUnlocked(true)} />;
+    return <PinGate title="لوحة التحكم محمية" onUnlock={() => setUnlocked(true)} />;
   }
 
   const alerts = buildSmartAlerts(data, isOnline);
