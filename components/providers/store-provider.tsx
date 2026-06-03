@@ -13,16 +13,18 @@ import {
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { flushSyncQueue } from "@/lib/firebase/offlineSync";
-import { fetchRemoteAppData } from "@/lib/firebase/firestore";
-import { db } from "@/lib/firebase/firebase";
 import {
   collection,
   onSnapshot,
   query,
   orderBy,
   limit,
+  setDoc,
+  deleteDoc,
+  doc,
+  getDocs,
 } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
 import {
   createSyncOperation,
   enqueueLocalOperation,
@@ -30,6 +32,8 @@ import {
   replaceLocalQueue,
   saveLocalAppData,
 } from "@/lib/offline/db";
+import { flushSyncQueue } from "@/lib/firebase/offlineSync";
+import { fetchRemoteAppData } from "@/lib/firebase/firestore";
 import type {
   AppData,
   CreditCustomer,
@@ -84,538 +88,491 @@ function stamp(data: AppData): AppData {
   return { ...data, updatedAt: new Date().toISOString() };
 }
 
+// ── Write helpers (direct Firestore, no queue) ──────────────────────────────
+async function fbWriteProduct(storeId: string, product: Product) {
+  await setDoc(doc(db, "stores", storeId, "products", product.id), product, { merge: true });
+}
+async function fbDeleteProduct(storeId: string, productId: string) {
+  await deleteDoc(doc(db, "stores", storeId, "products", productId));
+}
+async function fbWriteSale(storeId: string, sale: Sale) {
+  await setDoc(doc(db, "stores", storeId, "sales", sale.id), sale, { merge: true });
+}
+async function fbDeleteSale(storeId: string, saleId: string) {
+  await deleteDoc(doc(db, "stores", storeId, "sales", saleId));
+}
+async function fbWriteCustomer(storeId: string, customer: CreditCustomer) {
+  await setDoc(doc(db, "stores", storeId, "creditCustomers", customer.id), customer, { merge: true });
+}
+async function fbDeleteCustomer(storeId: string, customerId: string) {
+  await deleteDoc(doc(db, "stores", storeId, "creditCustomers", customerId));
+}
+async function fbWriteTransaction(storeId: string, tx: CreditTransaction) {
+  await setDoc(doc(db, "stores", storeId, "creditTransactions", tx.id), tx, { merge: true });
+}
+async function fbEnsureStore(storeId: string, ownerId: string, name: string) {
+  await setDoc(
+    doc(db, "stores", storeId),
+    { id: storeId, ownerId, name, updatedAt: new Date().toISOString() },
+    { merge: true },
+  );
+  await setDoc(
+    doc(db, "users", ownerId),
+    { storeId, updatedAt: new Date().toISOString() },
+    { merge: true },
+  );
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { notify } = useToast();
   const isOnline = useOnlineStatus();
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
-  const syncingRef = useRef(false);
+  const [syncing, setSyncing] = useState(false);
+  // storeId is stable once loaded — used in listeners without re-creating them
   const storeIdRef = useRef<string | null>(null);
+  // Track pending offline operations count separately from data
+  const [pendingCount, setPendingCount] = useState(0);
 
+  // ── Initial load ────────────────────────────────────────────────────────
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (!user) {
-        setData(null);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      const local = await getLocalAppData(user.uid);
-      if (cancelled) {
-        return;
-      }
-
-      let next = local ?? createInitialData(user.uid);
-      if (!local) {
-        const op = user.isDemo ? null : createSyncOperation("store.upsert", next.store, next.store.id);
-        next.syncQueue = op ? [op] : [];
-        await saveLocalAppData(next);
-        if (op) {
-          await enqueueLocalOperation(next.store.id, op);
-        }
-      }
-
-      if (!user.isDemo && isOnline) {
-        try {
-          next = await fetchRemoteAppData(next);
-          await saveLocalAppData(next);
-        } catch (err) {
-          console.error("Failed to fetch remote app data during load:", err);
-        }
-      }
-
-      storeIdRef.current = next.store.id;
-      setData(next);
+    if (!user) {
+      setData(null);
       setLoading(false);
-    }
-
-    load().catch((error) => {
-      setLoading(false);
-      notify({
-        tone: "error",
-        title: "تعذر تحميل البيانات المحلية",
-        body: error instanceof Error ? error.message : "خطأ غير معروف",
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOnline, notify, user]);
-
-  const commit = useCallback(async (nextData: AppData, operations: SyncOperation[] = []) => {
-    const next = stamp({
-      ...nextData,
-      syncQueue: [...nextData.syncQueue, ...operations],
-    });
-
-    setData(next);
-    await saveLocalAppData(next);
-    await Promise.all(operations.map((operation) => enqueueLocalOperation(next.store.id, operation)));
-  }, []);
-
-  const syncNow = useCallback(async (silent = false) => {
-    if (!data || !isOnline || user?.isDemo || syncingRef.current) {
       return;
     }
 
-    const unsynced = data.syncQueue.filter((operation) => operation.status !== "synced");
-    syncingRef.current = true;
-    try {
-      let next = data;
-      let synced: SyncOperation[] = [];
+    let cancelled = false;
 
-      if (unsynced.length) {
-        synced = await flushSyncQueue(data.store.id, unsynced);
-        const syncedById = new Map(synced.map((operation) => [operation.id, operation]));
-        const merged = data.syncQueue
-          .map((operation) => syncedById.get(operation.id) ?? operation)
-          .filter((operation, index, queue) => operation.status !== "synced" || index > queue.length - 30);
-        next = stamp({ ...data, syncQueue: merged });
-        await replaceLocalQueue(next.store.id, merged);
+    async function load() {
+      setLoading(true);
+
+      // 1. Get local snapshot first (fast start)
+      const local = await getLocalAppData(user!.uid);
+      let next = local ?? createInitialData(user!.uid);
+
+      // 2. If online, pull fresh data from Firebase
+      if (isOnline && !user!.isDemo) {
+        try {
+          // Ensure store document exists in Firebase
+          await fbEnsureStore(next.store.id, user!.uid, next.store.name);
+          // Pull all collections
+          const [prodSnap, salesSnap, custSnap, txSnap] = await Promise.all([
+            getDocs(collection(db, "stores", next.store.id, "products")),
+            getDocs(collection(db, "stores", next.store.id, "sales")),
+            getDocs(collection(db, "stores", next.store.id, "creditCustomers")),
+            getDocs(collection(db, "stores", next.store.id, "creditTransactions")),
+          ]);
+          next = {
+            ...next,
+            products: prodSnap.docs.map((d) => d.data() as Product),
+            sales: salesSnap.docs
+              .map((d) => d.data() as Sale)
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+            creditCustomers: custSnap.docs.map((d) => d.data() as CreditCustomer),
+            creditTransactions: txSnap.docs.map((d) => d.data() as CreditTransaction),
+            syncQueue: [],
+            updatedAt: new Date().toISOString(),
+          };
+        } catch (err) {
+          console.error("Initial Firebase load failed:", err);
+        }
       }
 
-      next = await fetchRemoteAppData(next);
-      setData(next);
-      await saveLocalAppData(next);
-
-      if (!silent && synced.some((operation) => operation.status === "synced")) {
-        notify({ tone: "success", title: "تمت المزامنة بنجاح" });
+      if (!cancelled) {
+        storeIdRef.current = next.store.id;
+        await saveLocalAppData(next);
+        setData(next);
+        setPendingCount(0);
+        setLoading(false);
       }
-      if (synced.some((operation) => operation.status === "failed")) {
-        notify({ tone: "warning", title: "بعض العمليات لم تتزامن", body: "ستتم إعادة المحاولة لاحقاً." });
-      }
-    } finally {
-      syncingRef.current = false;
     }
-  }, [data, isOnline, notify, user?.isDemo]);
 
-  const updateDataFromRemote = useCallback((updater: (prev: AppData) => AppData) => {
-    setData((prev) => {
-      if (!prev) return null;
-      const next = stamp(updater(prev));
-      saveLocalAppData(next).catch((err) => console.error("Failed to save local data during sync:", err));
-      return next;
+    load().catch((err) => {
+      if (!cancelled) {
+        setLoading(false);
+        notify({ tone: "error", title: "تعذر تحميل البيانات", body: String(err) });
+      }
     });
-  }, []);
 
-  // ──── Real-time listener ────────────────────────────────────────
-  // We use a stable storeId ref so that the listener is NOT re-created
-  // every time `data` changes (which would break real-time sync).
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, isOnline]);
+
+  // ── Real-time listeners (created once per storeId) ──────────────────────
   useEffect(() => {
-    if (!user || user.isDemo) return;
-
-    // Wait until storeId is known (set in load() above)
+    if (!user || user.isDemo || loading) return;
     const storeId = storeIdRef.current;
     if (!storeId) return;
 
-    const salesUnsub = onSnapshot(
-      query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(200)),
-      (snapshot) => {
-        const remoteSales = snapshot.docs.map((d) => d.data() as Sale);
-        updateDataFromRemote((prev) => {
-          const pendingSaleIds = new Set(
-            prev.syncQueue
-              .filter((op) => op.operationType === "sale.create" && op.status !== "synced")
-              .map((op) => (op.payload as Sale).id)
-          );
-          const mergedSales = [...remoteSales];
-          prev.sales.forEach((localSale) => {
-            if (pendingSaleIds.has(localSale.id) && !mergedSales.some((s) => s.id === localSale.id)) {
-              mergedSales.push(localSale);
-            }
-          });
-          return { ...prev, sales: mergedSales.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) };
-        });
-      },
-      (error) => console.error("Sales listener error:", error)
-    );
-
-    const productsUnsub = onSnapshot(
+    const unsub1 = onSnapshot(
       collection(db, "stores", storeId, "products"),
-      (snapshot) => {
-        const remoteProducts = snapshot.docs.map((d) => d.data() as Product);
-        updateDataFromRemote((prev) => {
-          const pendingProductIds = new Set(
-            prev.syncQueue
-              .filter((op) => op.operationType === "product.upsert" && op.status !== "synced")
-              .map((op) => (op.payload as Product).id)
-          );
-          const mergedProducts = remoteProducts.map((p) =>
-            pendingProductIds.has(p.id) ? (prev.products.find((lp) => lp.id === p.id) ?? p) : p
-          );
-          prev.products.forEach((localProd) => {
-            if (pendingProductIds.has(localProd.id) && !mergedProducts.some((p) => p.id === localProd.id)) {
-              mergedProducts.push(localProd);
-            }
-          });
-          return { ...prev, products: mergedProducts };
+      (snap) => {
+        const products = snap.docs.map((d) => d.data() as Product);
+        setData((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, products, updatedAt: new Date().toISOString() };
+          saveLocalAppData(next).catch(() => {});
+          return next;
         });
       },
-      (error) => console.error("Products listener error:", error)
+      (err) => console.error("[sync] products:", err),
     );
 
-    const customersUnsub = onSnapshot(
+    const unsub2 = onSnapshot(
+      query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(500)),
+      (snap) => {
+        const sales = snap.docs.map((d) => d.data() as Sale);
+        setData((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, sales, updatedAt: new Date().toISOString() };
+          saveLocalAppData(next).catch(() => {});
+          return next;
+        });
+      },
+      (err) => console.error("[sync] sales:", err),
+    );
+
+    const unsub3 = onSnapshot(
       collection(db, "stores", storeId, "creditCustomers"),
-      (snapshot) => {
-        const remoteCustomers = snapshot.docs.map((d) => d.data() as CreditCustomer);
-        updateDataFromRemote((prev) => {
-          const pendingCustomerIds = new Set(
-            prev.syncQueue
-              .filter((op) => op.operationType === "customer.upsert" && op.status !== "synced")
-              .map((op) => (op.payload as CreditCustomer).id)
-          );
-          const mergedCustomers = remoteCustomers.map((c) =>
-            pendingCustomerIds.has(c.id) ? (prev.creditCustomers.find((lc) => lc.id === c.id) ?? c) : c
-          );
-          prev.creditCustomers.forEach((localCust) => {
-            if (pendingCustomerIds.has(localCust.id) && !mergedCustomers.some((c) => c.id === localCust.id)) {
-              mergedCustomers.push(localCust);
-            }
-          });
-          return { ...prev, creditCustomers: mergedCustomers };
+      (snap) => {
+        const creditCustomers = snap.docs.map((d) => d.data() as CreditCustomer);
+        setData((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, creditCustomers, updatedAt: new Date().toISOString() };
+          saveLocalAppData(next).catch(() => {});
+          return next;
         });
       },
-      (error) => console.error("Customers listener error:", error)
+      (err) => console.error("[sync] customers:", err),
     );
 
-    const transactionsUnsub = onSnapshot(
+    const unsub4 = onSnapshot(
       collection(db, "stores", storeId, "creditTransactions"),
-      (snapshot) => {
-        const remoteTransactions = snapshot.docs.map((d) => d.data() as CreditTransaction);
-        updateDataFromRemote((prev) => {
-          const pendingTxIds = new Set(
-            prev.syncQueue
-              .filter((op) => op.operationType === "transaction.create" && op.status !== "synced")
-              .map((op) => (op.payload as CreditTransaction).id)
-          );
-          const mergedTransactions = [...remoteTransactions];
-          prev.creditTransactions.forEach((localTx) => {
-            if (pendingTxIds.has(localTx.id) && !mergedTransactions.some((t) => t.id === localTx.id)) {
-              mergedTransactions.push(localTx);
-            }
-          });
-          return { ...prev, creditTransactions: mergedTransactions };
+      (snap) => {
+        const creditTransactions = snap.docs.map((d) => d.data() as CreditTransaction);
+        setData((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, creditTransactions, updatedAt: new Date().toISOString() };
+          saveLocalAppData(next).catch(() => {});
+          return next;
         });
       },
-      (error) => console.error("Transactions listener error:", error)
+      (err) => console.error("[sync] transactions:", err),
     );
 
-    return () => {
-      salesUnsub();
-      productsUnsub();
-      customersUnsub();
-      transactionsUnsub();
-    };
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+  // Only re-run when user or loading status changes — NOT on every data change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, loading, updateDataFromRemote]);
+  }, [user?.uid, loading]);
 
-  // Auto-sync when online and there are unsynced operations
-  useEffect(() => {
-    if (isOnline && data && !user?.isDemo && !syncingRef.current) {
-      const hasUnsynced = data.syncQueue.some((op) => op.status !== "synced");
-      if (hasUnsynced) {
-        syncNow(true);
+  // ── syncNow: flush offline queue + re-pull from Firebase ───────────────
+  const syncNow = useCallback(async (silent = false) => {
+    if (!data || !isOnline || user?.isDemo || syncing) return;
+    const storeId = storeIdRef.current;
+    if (!storeId) return;
+
+    setSyncing(true);
+    try {
+      // 1. Flush any queued offline operations
+      const unsynced = data.syncQueue.filter((op) => op.status !== "synced");
+      if (unsynced.length) {
+        await flushSyncQueue(storeId, unsynced);
       }
-    }
-  }, [isOnline, data, user?.isDemo, syncNow]);
 
+      // 2. Pull fresh data from Firebase
+      const [prodSnap, salesSnap, custSnap, txSnap] = await Promise.all([
+        getDocs(collection(db, "stores", storeId, "products")),
+        getDocs(collection(db, "stores", storeId, "sales")),
+        getDocs(collection(db, "stores", storeId, "creditCustomers")),
+        getDocs(collection(db, "stores", storeId, "creditTransactions")),
+      ]);
+      const next: AppData = {
+        ...data,
+        products: prodSnap.docs.map((d) => d.data() as Product),
+        sales: salesSnap.docs
+          .map((d) => d.data() as Sale)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        creditCustomers: custSnap.docs.map((d) => d.data() as CreditCustomer),
+        creditTransactions: txSnap.docs.map((d) => d.data() as CreditTransaction),
+        syncQueue: [],
+        updatedAt: new Date().toISOString(),
+      };
+      setData(next);
+      await saveLocalAppData(next);
+      await replaceLocalQueue(storeId, []);
+      setPendingCount(0);
+
+      if (!silent) {
+        notify({ tone: "success", title: "تمت المزامنة بنجاح ✓" });
+      }
+    } catch (err) {
+      notify({ tone: "error", title: "فشلت المزامنة", body: String(err) });
+    } finally {
+      setSyncing(false);
+    }
+  }, [data, isOnline, user?.isDemo, syncing, notify]);
+
+  // ── Auto-sync on reconnect ──────────────────────────────────────────────
+  const prevOnlineRef = useRef(false);
   useEffect(() => {
-    if (isOnline) {
+    if (isOnline && !prevOnlineRef.current && data && !user?.isDemo) {
       syncNow(true);
     }
-  }, [isOnline, syncNow]);
+    prevOnlineRef.current = isOnline;
+  }, [isOnline, data, user?.isDemo, syncNow]);
 
-  const upsertProduct = useCallback(
-    async (draft: ProductDraft) => {
-      if (!data) {
-        throw new Error("البيانات غير جاهزة.");
+  // ── Write to Firebase then update local state ───────────────────────────
+  // Helper: optimistic local update + Firebase write (with offline fallback)
+  async function writeAndUpdate(
+    nextData: AppData,
+    firebaseFn: () => Promise<void>,
+    offlineOp?: SyncOperation,
+  ) {
+    const next = stamp({ ...nextData, syncQueue: nextData.syncQueue });
+    setData(next);
+    await saveLocalAppData(next);
+
+    if (isOnline) {
+      try {
+        await firebaseFn();
+      } catch (err) {
+        console.error("Firebase write failed, queuing offline:", err);
+        if (offlineOp) {
+          const queued = stamp({ ...next, syncQueue: [...next.syncQueue, offlineOp] });
+          setData(queued);
+          await saveLocalAppData(queued);
+          await enqueueLocalOperation(next.store.id, offlineOp);
+          setPendingCount((c) => c + 1);
+        }
       }
+    } else if (offlineOp) {
+      const queued = stamp({ ...next, syncQueue: [...next.syncQueue, offlineOp] });
+      setData(queued);
+      await saveLocalAppData(queued);
+      await enqueueLocalOperation(next.store.id, offlineOp);
+      setPendingCount((c) => c + 1);
+    }
+  }
 
-      const existing = data.products.find((product) => product.id === draft.id || product.qrCode === draft.qrCode);
-      const product = productFromDraft(draft, existing);
-      const products = existing
-        ? data.products.map((item) => (item.id === existing.id ? product : item))
-        : [product, ...data.products];
-      const operation = createSyncOperation("product.upsert", product, product.id);
-      await commit({ ...data, products }, [operation]);
-      notify({ tone: "success", title: "تم إدخال المنتج بنجاح", body: product.name });
-      return product;
-    },
-    [commit, data, notify],
-  );
+  // ── upsertProduct ───────────────────────────────────────────────────────
+  const upsertProduct = useCallback(async (draft: ProductDraft) => {
+    if (!data) throw new Error("البيانات غير جاهزة.");
+    const existing = data.products.find((p) => p.id === draft.id || p.qrCode === draft.qrCode);
+    const product = productFromDraft(draft, existing);
+    const products = existing
+      ? data.products.map((p) => (p.id === existing.id ? product : p))
+      : [product, ...data.products];
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      { ...data, products },
+      () => fbWriteProduct(storeId, product),
+      createSyncOperation("product.upsert", product, product.id),
+    );
+    notify({ tone: "success", title: "تم إدخال المنتج بنجاح", body: product.name });
+    return product;
+  }, [data, isOnline, notify]);
 
-  const deleteProduct = useCallback(
-    async (productId: string) => {
-      if (!data) {
-        return;
-      }
-
-      const product = data.products.find((item) => item.id === productId);
-      const operation = createSyncOperation("product.delete", { productId }, productId);
-      await commit({ ...data, products: data.products.filter((item) => item.id !== productId) }, [operation]);
-      notify({ tone: "info", title: "تم حذف المنتج", body: product?.name });
-    },
-    [commit, data, notify],
-  );
+  // ── deleteProduct ───────────────────────────────────────────────────────
+  const deleteProduct = useCallback(async (productId: string) => {
+    if (!data) return;
+    const product = data.products.find((p) => p.id === productId);
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      { ...data, products: data.products.filter((p) => p.id !== productId) },
+      () => fbDeleteProduct(storeId, productId),
+      createSyncOperation("product.delete", { productId }, productId),
+    );
+    notify({ tone: "info", title: "تم حذف المنتج", body: product?.name });
+  }, [data, isOnline, notify]);
 
   const findProductByCode = useCallback(
-    (code: string) => data?.products.find((product) => product.qrCode === code.trim()),
+    (code: string) => data?.products.find((p) => p.qrCode === code.trim()),
     [data?.products],
   );
 
-  const createSale = useCallback(
-    async (input: CreateSaleInput) => {
-      if (!data || !user) {
-        throw new Error("لا يمكن إنشاء عملية بيع قبل تحميل البيانات.");
-      }
+  // ── createSale ──────────────────────────────────────────────────────────
+  const createSale = useCallback(async (input: CreateSaleInput) => {
+    if (!data || !user) throw new Error("لا يمكن إنشاء عملية بيع قبل تحميل البيانات.");
+    if (!input.items.length) throw new Error("أضف منتجاً واحداً على الأقل.");
 
-      if (!input.items.length) {
-        throw new Error("أضف منتجاً واحداً على الأقل.");
-      }
+    const totals = calculateSaleTotals(input.items);
+    const shortage = totals.items.find((item) => {
+      const p = data.products.find((c) => c.id === item.productId);
+      return !p || p.quantity < item.quantity;
+    });
+    if (shortage) throw new Error(`الكمية غير كافية للمنتج: ${shortage.name}`);
+    if (input.type === "credit" && !input.customerId) throw new Error("اختر حساب كريدي.");
 
-      const totals = calculateSaleTotals(input.items);
-      const shortage = totals.items.find((item) => {
-        const product = data.products.find((candidate) => candidate.id === item.productId);
-        return !product || product.quantity < item.quantity;
-      });
+    const discountAmount = Math.min(Math.max(0, Number(input.discountAmount) || 0), totals.totalAmount);
+    const paidAmount = input.type === "cash" ? totals.totalAmount - discountAmount : Number(input.paidAmount) || 0;
+    const sale: Sale = {
+      id: crypto.randomUUID(),
+      type: input.type,
+      customerId: input.customerId,
+      customerName: input.customerName,
+      items: totals.items,
+      totalAmount: roundMoney(totals.totalAmount - discountAmount),
+      totalCost: totals.totalCost,
+      totalProfit: totals.totalProfit,
+      paidAmount: roundMoney(paidAmount),
+      remainingAmount: roundMoney(Math.max(0, totals.totalAmount - discountAmount - paidAmount)),
+      receiptNumber: makeReceiptNumber(),
+      createdAt: new Date().toISOString(),
+      createdBy: user.uid,
+    };
 
-      if (shortage) {
-        throw new Error(`الكمية غير كافية للمنتج: ${shortage.name}`);
-      }
+    const products = applySaleToInventory(data.products, totals.items);
+    let creditCustomers = data.creditCustomers;
+    let creditTransactions = data.creditTransactions;
+    let newTransaction: CreditTransaction | null = null;
 
-      if (input.type === "credit" && !input.customerId) {
-        throw new Error("اختر حساب كريدي قبل إتمام البيع.");
-      }
-
-      const discountAmount = Math.min(Math.max(0, Number(input.discountAmount) || 0), totals.totalAmount);
-      const paidAmount = input.type === "cash" ? totals.totalAmount - discountAmount : Number(input.paidAmount) || 0;
-      const sale: Sale = {
+    if (sale.type === "credit" && sale.customerId) {
+      creditCustomers = updateCreditTotals(creditCustomers, sale.customerId, sale.totalAmount, sale.paidAmount);
+      newTransaction = {
         id: crypto.randomUUID(),
-        type: input.type,
-        customerId: input.customerId,
-        customerName: input.customerName,
-        items: totals.items,
-        totalAmount: roundMoney(totals.totalAmount - discountAmount),
-        totalCost: totals.totalCost,
-        totalProfit: totals.totalProfit,
-        paidAmount: roundMoney(paidAmount),
-        remainingAmount: roundMoney(Math.max(0, totals.totalAmount - discountAmount - paidAmount)),
-        receiptNumber: makeReceiptNumber(),
-        createdAt: new Date().toISOString(),
-        createdBy: user.uid,
+        customerId: sale.customerId,
+        type: "invoice",
+        saleId: sale.id,
+        amount: sale.totalAmount,
+        paidAmount: sale.paidAmount,
+        remainingAmount: sale.remainingAmount,
+        note: `فاتورة ${sale.receiptNumber}`,
+        items: totals.items.map((i) => ({ name: i.name, quantity: i.quantity, total: i.total })),
+        createdAt: sale.createdAt,
       };
+      creditTransactions = [newTransaction, ...creditTransactions];
+    }
 
-      const products = applySaleToInventory(data.products, totals.items);
-      let creditCustomers = data.creditCustomers;
-      let creditTransactions = data.creditTransactions;
-      const operations: SyncOperation[] = [
-        createSyncOperation("sale.create", sale, sale.id),
-        ...products
-          .filter((product) =>
-            data.products.some((oldProduct) => oldProduct.id === product.id && oldProduct.quantity !== product.quantity),
-          )
-          .map((product) => createSyncOperation("product.upsert", product, product.id)),
-      ];
+    const nextData: AppData = { ...data, products, sales: [sale, ...data.sales], creditCustomers, creditTransactions };
+    const storeId = data.store.id;
+    const updatedCustomer = creditCustomers.find((c) => c.id === sale.customerId);
 
-      if (sale.type === "credit" && sale.customerId) {
-        creditCustomers = updateCreditTotals(creditCustomers, sale.customerId, sale.totalAmount, sale.paidAmount);
-        const transaction: CreditTransaction = {
-          id: crypto.randomUUID(),
-          customerId: sale.customerId,
-          type: "invoice",
-          saleId: sale.id,
-          amount: sale.totalAmount,
-          paidAmount: sale.paidAmount,
-          remainingAmount: sale.remainingAmount,
-          note: `فاتورة ${sale.receiptNumber}`,
-          items: totals.items.map((item) => ({ name: item.name, quantity: item.quantity, total: item.total })),
-          createdAt: sale.createdAt,
-        };
-        creditTransactions = [transaction, ...creditTransactions];
-        const updatedCustomer = creditCustomers.find((customer) => customer.id === sale.customerId);
-        if (updatedCustomer) {
-          operations.push(createSyncOperation("customer.upsert", updatedCustomer, updatedCustomer.id));
-        }
-        operations.push(createSyncOperation("transaction.create", transaction, transaction.id));
-      }
-
-      await commit(
-        {
-          ...data,
-          products,
-          sales: [sale, ...data.sales],
-          creditCustomers,
-          creditTransactions,
-        },
-        operations,
+    await writeAndUpdate(nextData, async () => {
+      await fbWriteSale(storeId, sale);
+      await Promise.all(
+        products
+          .filter((p) => data.products.find((op) => op.id === p.id && op.quantity !== p.quantity))
+          .map((p) => fbWriteProduct(storeId, p)),
       );
-      notify({ tone: "success", title: "تم البيع بنجاح", body: sale.receiptNumber });
-      return sale;
-    },
-    [commit, data, notify, user],
-  );
+      if (updatedCustomer) await fbWriteCustomer(storeId, updatedCustomer);
+      if (newTransaction) await fbWriteTransaction(storeId, newTransaction);
+    });
 
-  const deleteSale = useCallback(
-    async (saleId: string) => {
-      if (!data) return;
+    notify({ tone: "success", title: "تم البيع بنجاح", body: sale.receiptNumber });
+    return sale;
+  }, [data, user, isOnline, notify]);
 
-      const sale = data.sales.find((s) => s.id === saleId);
-      if (!sale) return;
+  // ── deleteSale ──────────────────────────────────────────────────────────
+  const deleteSale = useCallback(async (saleId: string) => {
+    if (!data) return;
+    const sale = data.sales.find((s) => s.id === saleId);
+    if (!sale) return;
+    const restoredProducts = data.products.map((p) => {
+      const item = sale.items.find((i) => i.productId === p.id);
+      return item ? { ...p, quantity: p.quantity + item.quantity } : p;
+    });
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      { ...data, sales: data.sales.filter((s) => s.id !== saleId), products: restoredProducts },
+      async () => {
+        await fbDeleteSale(storeId, saleId);
+        await Promise.all(
+          restoredProducts
+            .filter((p) => data.products.find((op) => op.id === p.id && op.quantity !== p.quantity))
+            .map((p) => fbWriteProduct(storeId, p)),
+        );
+      },
+    );
+    notify({ tone: "info", title: "تم حذف البيع وإعادة البضاعة للمخزون" });
+  }, [data, isOnline, notify]);
 
-      // Restore inventory quantities
-      const restoredProducts = data.products.map((product) => {
-        const item = sale.items.find((i) => i.productId === product.id);
-        if (!item) return product;
-        return { ...product, quantity: product.quantity + item.quantity };
-      });
+  // ── upsertCustomer ──────────────────────────────────────────────────────
+  const upsertCustomer = useCallback(async (input: Partial<CreditCustomer> & { name: string }) => {
+    if (!data) throw new Error("البيانات غير جاهزة.");
+    const now = new Date().toISOString();
+    const existing = input.id ? data.creditCustomers.find((c) => c.id === input.id) : undefined;
+    const openingDebt = existing ? 0 : roundMoney(Math.max(0, Number(input.totalDebt) || Number(input.remainingDebt) || 0));
+    const customer: CreditCustomer = {
+      id: existing?.id ?? crypto.randomUUID(),
+      name: input.name.trim(),
+      phone: input.phone?.trim() || undefined,
+      address: input.address?.trim() || undefined,
+      totalDebt: existing?.totalDebt ?? openingDebt,
+      totalPaid: existing?.totalPaid ?? 0,
+      remainingDebt: existing?.remainingDebt ?? openingDebt,
+      lastActivityAt: openingDebt > 0 ? now : (existing?.lastActivityAt ?? now),
+      paymentDueDate: input.paymentDueDate ?? existing?.paymentDueDate,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const creditCustomers = existing
+      ? data.creditCustomers.map((c) => (c.id === existing.id ? customer : c))
+      : [customer, ...data.creditCustomers];
+    const openingTx: CreditTransaction | null =
+      !existing && openingDebt > 0
+        ? { id: crypto.randomUUID(), customerId: customer.id, type: "invoice", amount: openingDebt, paidAmount: 0, remainingAmount: openingDebt, note: "دين أولي عند إنشاء الحساب", createdAt: now }
+        : null;
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      { ...data, creditCustomers, creditTransactions: openingTx ? [openingTx, ...data.creditTransactions] : data.creditTransactions },
+      async () => {
+        await fbWriteCustomer(storeId, customer);
+        if (openingTx) await fbWriteTransaction(storeId, openingTx);
+      },
+    );
+    notify({ tone: "success", title: existing ? "تم تعديل حساب الكريدي" : "تم إنشاء حساب كريدي" });
+    return customer;
+  }, [data, isOnline, notify]);
 
-      const operations: SyncOperation[] = [
-        createSyncOperation("sale.delete", { saleId }, saleId),
-        ...restoredProducts
-          .filter((p) => data.products.find((old) => old.id === p.id && old.quantity !== p.quantity))
-          .map((p) => createSyncOperation("product.upsert", p, p.id)),
-      ];
+  // ── deleteCustomer ──────────────────────────────────────────────────────
+  const deleteCustomer = useCallback(async (customerId: string) => {
+    if (!data) return;
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      {
+        ...data,
+        creditCustomers: data.creditCustomers.filter((c) => c.id !== customerId),
+        creditTransactions: data.creditTransactions.filter((t) => t.customerId !== customerId),
+      },
+      () => fbDeleteCustomer(storeId, customerId),
+    );
+    notify({ tone: "info", title: "تم حذف حساب الكريدي" });
+  }, [data, isOnline, notify]);
 
-      await commit(
-        {
-          ...data,
-          sales: data.sales.filter((s) => s.id !== saleId),
-          products: restoredProducts,
-        },
-        operations,
-      );
-      notify({ tone: "info", title: "تم حذف البيع وإعادة البضاعة للمخزون" });
-    },
-    [commit, data, notify],
-  );
-
-  const upsertCustomer = useCallback(
-    async (input: Partial<CreditCustomer> & { name: string }) => {
-      if (!data) {
-        throw new Error("البيانات غير جاهزة.");
-      }
-
-      const now = new Date().toISOString();
-      const existing = input.id ? data.creditCustomers.find((customer) => customer.id === input.id) : undefined;
-      const openingDebt = existing ? 0 : roundMoney(Math.max(0, Number(input.totalDebt) || Number(input.remainingDebt) || 0));
-      const customer: CreditCustomer = {
-        id: existing?.id ?? crypto.randomUUID(),
-        name: input.name.trim(),
-        phone: input.phone?.trim() || undefined,
-        address: input.address?.trim() || undefined,
-        totalDebt: existing?.totalDebt ?? openingDebt,
-        totalPaid: existing?.totalPaid ?? 0,
-        remainingDebt: existing?.remainingDebt ?? openingDebt,
-        lastActivityAt: openingDebt > 0 ? now : (existing?.lastActivityAt ?? now),
-        paymentDueDate: input.paymentDueDate ?? existing?.paymentDueDate,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      };
-
-      const creditCustomers = existing
-        ? data.creditCustomers.map((item) => (item.id === existing.id ? customer : item))
-        : [customer, ...data.creditCustomers];
-      const openingTransaction: CreditTransaction | null =
-        !existing && openingDebt > 0
-          ? {
-              id: crypto.randomUUID(),
-              customerId: customer.id,
-              type: "invoice",
-              amount: openingDebt,
-              paidAmount: 0,
-              remainingAmount: openingDebt,
-              note: "دين أولي عند إنشاء الحساب",
-              createdAt: now,
-            }
-          : null;
-      await commit(
-        {
-          ...data,
-          creditCustomers,
-          creditTransactions: openingTransaction ? [openingTransaction, ...data.creditTransactions] : data.creditTransactions,
-        },
-        [
-          createSyncOperation("customer.upsert", customer, customer.id),
-          ...(openingTransaction ? [createSyncOperation("transaction.create", openingTransaction, openingTransaction.id)] : []),
-        ],
-      );
-      notify({ tone: "success", title: existing ? "تم تعديل حساب الكريدي" : "تم إنشاء حساب كريدي" });
-      return customer;
-    },
-    [commit, data, notify],
-  );
-
-  const deleteCustomer = useCallback(
-    async (customerId: string) => {
-      if (!data) {
-        return;
-      }
-
-      await commit(
-        {
-          ...data,
-          creditCustomers: data.creditCustomers.filter((customer) => customer.id !== customerId),
-          creditTransactions: data.creditTransactions.filter((transaction) => transaction.customerId !== customerId),
-        },
-        [createSyncOperation("customer.delete", { customerId }, customerId)],
-      );
-      notify({ tone: "info", title: "تم حذف حساب الكريدي" });
-    },
-    [commit, data, notify],
-  );
-
-  const addPayment = useCallback(
-    async (customerId: string, amount: number, note?: string) => {
-      if (!data) {
-        throw new Error("البيانات غير جاهزة.");
-      }
-
-      const customer = data.creditCustomers.find((item) => item.id === customerId);
-      if (!customer) {
-        throw new Error("حساب الكريدي غير موجود.");
-      }
-
-      const paid = Math.max(0, Number(amount) || 0);
-      const transaction: CreditTransaction = {
-        id: crypto.randomUUID(),
-        customerId,
-        type: "payment",
-        amount: paid,
-        paidAmount: paid,
-        remainingAmount: roundMoney(Math.max(0, customer.remainingDebt - paid)),
-        note,
-        createdAt: new Date().toISOString(),
-      };
-      const creditCustomers = updateCreditTotals(data.creditCustomers, customerId, 0, paid);
-      const updatedCustomer = creditCustomers.find((item) => item.id === customerId);
-      const operations = [
-        createSyncOperation("transaction.create", transaction, transaction.id),
-        ...(updatedCustomer ? [createSyncOperation("customer.upsert", updatedCustomer, updatedCustomer.id)] : []),
-      ];
-
-      await commit(
-        {
-          ...data,
-          creditCustomers,
-          creditTransactions: [transaction, ...data.creditTransactions],
-        },
-        operations,
-      );
-      notify({ tone: "success", title: "تم تسجيل الدفعة" });
-      return transaction;
-    },
-    [commit, data, notify],
-  );
+  // ── addPayment ──────────────────────────────────────────────────────────
+  const addPayment = useCallback(async (customerId: string, amount: number, note?: string) => {
+    if (!data) throw new Error("البيانات غير جاهزة.");
+    const customer = data.creditCustomers.find((c) => c.id === customerId);
+    if (!customer) throw new Error("حساب الكريدي غير موجود.");
+    const paid = Math.max(0, Number(amount) || 0);
+    const tx: CreditTransaction = {
+      id: crypto.randomUUID(),
+      customerId,
+      type: "payment",
+      amount: paid,
+      paidAmount: paid,
+      remainingAmount: roundMoney(Math.max(0, customer.remainingDebt - paid)),
+      note,
+      createdAt: new Date().toISOString(),
+    };
+    const creditCustomers = updateCreditTotals(data.creditCustomers, customerId, 0, paid);
+    const updatedCustomer = creditCustomers.find((c) => c.id === customerId);
+    const storeId = data.store.id;
+    await writeAndUpdate(
+      { ...data, creditCustomers, creditTransactions: [tx, ...data.creditTransactions] },
+      async () => {
+        await fbWriteTransaction(storeId, tx);
+        if (updatedCustomer) await fbWriteCustomer(storeId, updatedCustomer);
+      },
+    );
+    notify({ tone: "success", title: "تم تسجيل الدفعة" });
+    return tx;
+  }, [data, isOnline, notify]);
 
   const stats = useMemo(() => {
-    if (!data) {
-      return null;
-    }
+    if (!data) return null;
     return computeDashboardStats(data.products, data.sales, data.creditCustomers);
   }, [data]);
 
@@ -624,7 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       data,
       loading,
       isOnline,
-      pendingSyncCount: data?.syncQueue.filter((operation) => operation.status !== "synced").length ?? 0,
+      pendingSyncCount: pendingCount + (data?.syncQueue.filter((op) => op.status !== "synced").length ?? 0),
       stats,
       upsertProduct,
       deleteProduct,
@@ -636,21 +593,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPayment,
       syncNow,
     }),
-    [
-      addPayment,
-      createSale,
-      data,
-      deleteCustomer,
-      deleteProduct,
-      deleteSale,
-      findProductByCode,
-      isOnline,
-      loading,
-      stats,
-      syncNow,
-      upsertCustomer,
-      upsertProduct,
-    ],
+    [addPayment, createSale, data, deleteCustomer, deleteProduct, deleteSale,
+      findProductByCode, isOnline, loading, pendingCount, stats, syncNow, upsertCustomer, upsertProduct],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
@@ -658,8 +602,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
 export function useStore() {
   const context = useContext(StoreContext);
-  if (!context) {
-    throw new Error("useStore must be used inside StoreProvider");
-  }
+  if (!context) throw new Error("useStore must be used inside StoreProvider");
   return context;
 }

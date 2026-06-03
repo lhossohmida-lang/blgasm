@@ -2,67 +2,41 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
 
-    function ownsStore(storeId) {
-      return signedIn()
-        && exists(/databases/$(database)/documents/stores/$(storeId))
-        && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == request.auth.uid;
+    // storeId is always equal to the owner's Firebase uid
+    function isOwner(storeId) {
+      return request.auth != null && request.auth.uid == storeId;
     }
 
     match /users/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
     match /stores/{storeId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update, delete: if ownsStore(storeId);
+      allow read, write: if isOwner(storeId);
 
       match /products/{productId} {
-        allow read: if ownsStore(storeId);
-        allow create, update: if ownsStore(storeId)
-          && request.resource.data.qrCode is string
-          && request.resource.data.name is string;
-        allow delete: if ownsStore(storeId);
+        allow read, write: if isOwner(storeId);
       }
 
       match /sales/{saleId} {
-        allow read: if ownsStore(storeId);
-        allow create, update: if ownsStore(storeId)
-          && request.resource.data.createdBy == request.auth.uid
-          && request.resource.data.items is list;
-        allow delete: if ownsStore(storeId);
+        allow read, write: if isOwner(storeId);
       }
 
       match /creditCustomers/{customerId} {
-        allow read: if ownsStore(storeId);
-        allow create, update: if ownsStore(storeId)
-          && request.resource.data.name is string;
-        allow delete: if ownsStore(storeId);
+        allow read, write: if isOwner(storeId);
 
         match /transactions/{transactionId} {
-          allow read: if ownsStore(storeId);
-          allow create, update: if ownsStore(storeId)
-            && request.resource.data.customerId == customerId;
-          allow delete: if ownsStore(storeId);
+          allow read, write: if isOwner(storeId);
         }
       }
 
       match /creditTransactions/{transactionId} {
-        allow read: if ownsStore(storeId);
-        allow create, update: if ownsStore(storeId)
-          && request.resource.data.customerId is string;
-        allow delete: if ownsStore(storeId);
+        allow read, write: if isOwner(storeId);
       }
 
       match /syncQueue/{operationId} {
-        allow read: if ownsStore(storeId);
-        allow create, update: if ownsStore(storeId)
-          && request.resource.data.operationType is string
-          && request.resource.data.status in ["pending", "synced", "failed"];
-        allow delete: if ownsStore(storeId);
+        allow read, write: if isOwner(storeId);
       }
     }
   }
