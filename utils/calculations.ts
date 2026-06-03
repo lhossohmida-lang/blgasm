@@ -47,7 +47,7 @@ function resolveSaleMode(draft: ProductDraft, existing?: Product): ProductSaleMo
 
 function normalizeSaleQuantity(quantity: number, unit?: ProductSaleUnit) {
   const safe = Math.max(0, Number(quantity) || 0);
-  return unit === "gram" ? roundMoney(safe) : Math.max(0, Math.floor(safe));
+  return unit === "gram" ? Math.round(safe * 10000) / 10000 : Math.max(0, Math.floor(safe));
 }
 
 export function productFromDraft(draft: ProductDraft, existing?: Product): Product {

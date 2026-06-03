@@ -189,50 +189,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [data, isOnline, notify, user?.isDemo]);
 
+  const updateDataFromRemote = useCallback((updater: (prev: AppData) => AppData) => {
+    setData((prev) => {
+      if (!prev) return null;
+      const next = stamp(updater(prev));
+      saveLocalAppData(next).catch((err) => console.error("Failed to save local data during sync:", err));
+      return next;
+    });
+  }, []);
+
   // ──── Real-time listener ────────────────────────────────────────
   useEffect(() => {
     if (!user || user.isDemo || !data?.store.id) return;
 
     const storeId = data.store.id;
-    let initialLoad = true;
 
     const salesUnsub = onSnapshot(
       query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(200)),
       (snapshot) => {
-        if (initialLoad) { initialLoad = false; return; }
         const remoteSales = snapshot.docs.map((d) => d.data() as Sale);
-        setData((prev) => prev ? { ...prev, sales: remoteSales, updatedAt: new Date().toISOString() } : prev);
+        updateDataFromRemote((prev) => ({ ...prev, sales: remoteSales }));
       },
     );
 
     const productsUnsub = onSnapshot(
       collection(db, "stores", storeId, "products"),
       (snapshot) => {
-        if (initialLoad) return;
         const remoteProducts = snapshot.docs.map((d) => d.data() as Product);
-        setData((prev) => prev ? { ...prev, products: remoteProducts, updatedAt: new Date().toISOString() } : prev);
+        updateDataFromRemote((prev) => ({ ...prev, products: remoteProducts }));
       },
     );
 
     const customersUnsub = onSnapshot(
       collection(db, "stores", storeId, "creditCustomers"),
       (snapshot) => {
-        if (initialLoad) return;
         const remoteCustomers = snapshot.docs.map((d) => d.data() as CreditCustomer);
-        setData((prev) => prev ? { ...prev, creditCustomers: remoteCustomers, updatedAt: new Date().toISOString() } : prev);
+        updateDataFromRemote((prev) => ({ ...prev, creditCustomers: remoteCustomers }));
       },
     );
 
-    // Mark initialLoad as done after first snapshot resolves
-    const timer = setTimeout(() => { initialLoad = false; }, 2000);
-
     return () => {
-      clearTimeout(timer);
       salesUnsub();
       productsUnsub();
       customersUnsub();
     };
-  }, [user, data?.store.id]);
+  }, [user, data?.store.id, updateDataFromRemote]);
 
   useEffect(() => {
     if (isOnline) {

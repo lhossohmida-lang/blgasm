@@ -158,6 +158,9 @@ export default function InventoryPage() {
           <h1 className="ios-title">المخزون</h1>
           <p className="ios-subtitle">إدارة وتتبع جميع منتجاتك</p>
         </div>
+        <Link href="/products/new" className="ios-circle-button text-leaf-600 bg-leaf-50 flex items-center justify-center lg:hidden" title="إضافة منتج">
+          <Plus className="h-5 w-5" />
+        </Link>
         <button className="ios-circle-button" title="بحث">
           <Search className="h-5 w-5" />
         </button>
@@ -333,10 +336,10 @@ export default function InventoryPage() {
       {/* Products as rows */}
       <div className="ios-card overflow-hidden p-0">
         {/* Table header */}
-        <div className="grid grid-cols-[1fr_80px_90px_90px_90px] gap-2 border-b border-black/5 bg-market-ink/3 px-4 py-3 text-xs font-bold text-market-ink/50">
+        <div className="grid grid-cols-[1.5fr_65px_70px_70px] lg:grid-cols-[1fr_80px_90px_90px_90px] gap-2 border-b border-black/5 bg-market-ink/3 px-4 py-3 text-xs font-bold text-market-ink/50">
           <span>المنتج</span>
           <span className="text-center">الكمية</span>
-          <span className="text-center">سعر الشراء</span>
+          <span className="hidden lg:block text-center">سعر الشراء</span>
           <span className="text-center">سعر البيع</span>
           <span className="text-left">الإجراءات</span>
         </div>
@@ -348,7 +351,7 @@ export default function InventoryPage() {
               <div
                 key={product.id}
                 className={cn(
-                  "grid grid-cols-[1fr_80px_90px_90px_90px] items-center gap-2 px-4 py-3 transition",
+                  "grid grid-cols-[1.5fr_65px_70px_70px] lg:grid-cols-[1fr_80px_90px_90px_90px] items-center gap-2 px-4 py-3 transition",
                   status.rowClass,
                 )}
               >
@@ -391,7 +394,7 @@ export default function InventoryPage() {
                 </div>
 
                 {/* Buy price */}
-                <div className="text-center">
+                <div className="hidden lg:block text-center">
                   <p className="text-sm font-bold text-market-ink/70">{formatCurrency(product.wholesalePrice)}</p>
                   <p className="text-xs text-market-ink/40">{unitPriceLabel(product.saleUnit)}</p>
                 </div>
@@ -428,14 +431,6 @@ export default function InventoryPage() {
           ) : null}
         </div>
       </div>
-
-      <Link
-        href="/products/new"
-        className="fixed bottom-28 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-leaf-600 px-8 py-4 text-lg font-black text-white shadow-glass lg:hidden"
-      >
-        <Plus className="h-6 w-6" />
-        إضافة منتج
-      </Link>
 
       {/* Mobile shortcuts toggle */}
       <button
