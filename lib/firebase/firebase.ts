@@ -2,7 +2,7 @@
 
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDcp7-UIG6BD8zMsU-pAe4JWs7WDfyuEBs",
@@ -16,7 +16,16 @@ const firebaseConfig = {
 
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+
+let firestoreDb;
+try {
+  firestoreDb = initializeFirestore(firebaseApp, {
+    ignoreUndefinedProperties: true,
+  });
+} catch (e) {
+  firestoreDb = getFirestore(firebaseApp);
+}
+export const db = firestoreDb;
 
 // enableFirebaseOfflinePersistence removed — we use our own IndexedDB (lib/offline/db.ts)
 // Firestore's built-in persistence conflicted with our sync system
