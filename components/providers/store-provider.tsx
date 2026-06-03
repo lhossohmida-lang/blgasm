@@ -357,12 +357,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setData(next);
     await saveLocalAppData(next);
 
-    if (isOnline) {
+    const canWriteFirebase = isOnline && user && !user.isDemo && user.isVerified;
+    const canQueueSync = user && !user.isDemo;
+
+    if (canWriteFirebase) {
       try {
         await firebaseFn();
       } catch (err) {
         console.error("Firebase write failed, queuing offline:", err);
-        if (offlineOp) {
+        if (offlineOp && canQueueSync) {
           const queued = stamp({ ...next, syncQueue: [...next.syncQueue, offlineOp] });
           setData(queued);
           await saveLocalAppData(queued);
@@ -370,7 +373,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setPendingCount((c) => c + 1);
         }
       }
-    } else if (offlineOp) {
+    } else if (offlineOp && canQueueSync) {
       const queued = stamp({ ...next, syncQueue: [...next.syncQueue, offlineOp] });
       setData(queued);
       await saveLocalAppData(queued);
