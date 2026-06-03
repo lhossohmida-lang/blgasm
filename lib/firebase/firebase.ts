@@ -2,7 +2,7 @@
 
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { enableIndexedDbPersistence, getFirestore } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDcp7-UIG6BD8zMsU-pAe4JWs7WDfyuEBs",
@@ -18,17 +18,5 @@ export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseC
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
-let offlinePersistenceStarted = false;
-
-export async function enableFirebaseOfflinePersistence() {
-  if (typeof window === "undefined" || offlinePersistenceStarted) {
-    return;
-  }
-
-  offlinePersistenceStarted = true;
-  try {
-    await enableIndexedDbPersistence(db);
-  } catch (error) {
-    console.info("Firestore offline persistence skipped:", error);
-  }
-}
+// enableFirebaseOfflinePersistence removed — we use our own IndexedDB (lib/offline/db.ts)
+// Firestore's built-in persistence conflicted with our sync system
