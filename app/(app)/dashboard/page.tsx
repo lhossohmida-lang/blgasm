@@ -23,6 +23,7 @@ import { useState, useCallback } from "react";
 import { PinGate } from "@/components/auth/pin-gate";
 import { useToast } from "@/components/providers/toast-provider";
 import { Button } from "@/components/ui/button";
+import type { Sale } from "@/types";
 
 function HeroMetric({
   title,
@@ -67,10 +68,8 @@ function ProductMini({ name, value, image, rank }: { name: string; value: string
   );
 }
 
-
-
 // ──── Sales log row ────────────────────────────────────────────────
-function SaleRow({ sale, onDelete }: { sale: { id: string; receiptNumber: string; type: string; totalAmount: number; createdAt: string; customerName?: string }; onDelete: (id: string) => void }) {
+function SaleRow({ sale, onDelete }: { sale: Sale; onDelete: (id: string) => void }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -83,37 +82,45 @@ function SaleRow({ sale, onDelete }: { sale: { id: string; receiptNumber: string
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 py-3 border-b border-black/5 dark:border-white/10 last:border-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="ios-icon h-10 w-10 rounded-2xl shrink-0">
-          <ShoppingBag className="h-5 w-5" />
+    <div className="flex flex-col gap-1 py-3 border-b border-black/5 dark:border-white/10 last:border-0">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="ios-icon h-10 w-10 rounded-2xl shrink-0">
+            <ShoppingBag className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-black truncate">{sale.receiptNumber}</p>
+            <p className="text-xs text-market-ink/55 dark:text-white/55">
+              {sale.type === "cash" ? "نقدي" : `كريدي${sale.customerName ? ` • ${sale.customerName}` : ""}`}
+              {" · "}
+              {new Date(sale.createdAt).toLocaleDateString("ar-DZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="font-black truncate">{sale.receiptNumber}</p>
-          <p className="text-xs text-market-ink/55 dark:text-white/55">
-            {sale.type === "cash" ? "نقدي" : `كريدي${sale.customerName ? ` • ${sale.customerName}` : ""}`}
-            {" · "}
-            {new Date(sale.createdAt).toLocaleDateString("ar-DZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-          </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className={`flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black transition ${
+              confirming
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40"
+            }`}
+            title="حذف (إعادة البضاعة)"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {confirming ? "تأكيد؟" : "إرجاع"}
+          </button>
         </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <p className="font-black">{formatCurrency(sale.totalAmount)}</p>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          className={`flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-black transition ${
-            confirming
-              ? "bg-red-500 text-white hover:bg-red-600"
-              : "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40"
-          }`}
-          title="حذف (إعادة البضاعة)"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {confirming ? "تأكيد؟" : "إرجاع"}
-        </button>
-      </div>
+      {sale.items && sale.items.length > 0 && (
+        <div className="mr-13 mt-1 text-xs text-market-ink/65 dark:text-white/60">
+          <span className="font-bold text-market-ink/50 dark:text-white/40">المنتجات: </span>
+          {sale.items.map((item) => `${item.name} (${item.quantity})`).join("، ")}
+        </div>
+      )}
     </div>
   );
 }
