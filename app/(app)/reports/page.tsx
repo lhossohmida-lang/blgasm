@@ -57,11 +57,7 @@ export default function ReportsPage() {
   const [unlocked, setUnlocked] = useState(false);
   const [period, setPeriod] = useState<Period>("day");
 
-  // PIN gate
-  if (!user?.isDemo && !unlocked) {
-    return <PinGate title="التقارير محمية" onUnlock={() => setUnlocked(true)} />;
-  }
-
+  // ✅ All hooks must be called before any conditional return
   const report = useMemo(() => {
     if (!data) return null;
     const sales = rangeFilter(data.sales, period);
@@ -82,6 +78,11 @@ export default function ReportsPage() {
       creditSalesTotal: roundMoney(creditSales.reduce((sum, sale) => sum + sale.totalAmount, 0)),
     };
   }, [data, period]);
+
+  // PIN gate — after all hooks
+  if (!user?.isDemo && !unlocked) {
+    return <PinGate title="التقارير محمية" onUnlock={() => setUnlocked(true)} />;
+  }
 
   if (!data || !report) return null;
 
