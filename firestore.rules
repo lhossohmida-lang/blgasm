@@ -46,8 +46,15 @@ service cloud.firestore {
           allow read: if ownsStore(storeId);
           allow create, update: if ownsStore(storeId)
             && request.resource.data.customerId == customerId;
-          allow delete: if false;
+          allow delete: if ownsStore(storeId);
         }
+      }
+
+      match /creditTransactions/{transactionId} {
+        allow read: if ownsStore(storeId);
+        allow create, update: if ownsStore(storeId)
+          && request.resource.data.customerId is string;
+        allow delete: if ownsStore(storeId);
       }
 
       match /syncQueue/{operationId} {

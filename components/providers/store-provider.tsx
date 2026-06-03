@@ -75,7 +75,7 @@ interface StoreContextValue {
   upsertCustomer: (customer: Partial<CreditCustomer> & { name: string }) => Promise<CreditCustomer>;
   deleteCustomer: (customerId: string) => Promise<void>;
   addPayment: (customerId: string, amount: number, note?: string) => Promise<CreditTransaction>;
-  syncNow: () => Promise<void>;
+  syncNow: (silent?: boolean) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -156,7 +156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await Promise.all(operations.map((operation) => enqueueLocalOperation(next.store.id, operation)));
   }, []);
 
-  const syncNow = useCallback(async () => {
+  const syncNow = useCallback(async (silent = false) => {
     if (!data || !isOnline || user?.isDemo || syncingRef.current) {
       return;
     }
@@ -181,7 +181,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setData(next);
       await saveLocalAppData(next);
 
-      if (synced.some((operation) => operation.status === "synced")) {
+      if (!silent && synced.some((operation) => operation.status === "synced")) {
         notify({ tone: "success", title: "تمت المزامنة بنجاح" });
       }
       if (synced.some((operation) => operation.status === "failed")) {
@@ -211,7 +211,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(200)),
       (snapshot) => {
         const remoteSales = snapshot.docs.map((d) => d.data() as Sale);
-        updateDataFromRemote((prev) => ({ ...prev, sales: remoteSales }));
+        updateDataFromRemote((prev) => {
+          const pendingSaleIds = new Set(
+            prev.syncQueue
+              .filter((op) => op.operationType === "sale.create" && op.status !== "synced")
+              .map((op) => (op.payload as Sale).id)
+          );
+          const mergedSales = [...remoteSales];
+          prev.sales.forEach((localSale) => {
+            if (pendingSaleIds.has(localSale.id) && !mergedSales.some((s) => s.id === localSale.id)) {
+              mergedSales.push(localSale);
+            }
+          });
+          return { ...prev, sales: mergedSales.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) };
+        });
       },
       (error) => {
         console.error("Sales listener error:", error);
@@ -222,7 +235,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       collection(db, "stores", storeId, "products"),
       (snapshot) => {
         const remoteProducts = snapshot.docs.map((d) => d.data() as Product);
-        updateDataFromRemote((prev) => ({ ...prev, products: remoteProducts }));
+        updateDataFromRemote((prev) => {
+          const pendingProductIds = new Set(
+            prev.syncQueue
+              .filter((op) => op.operationType === "product.upsert" && op.status !== "synced")
+              .map((op) => (op.payload as Product).id)
+          );
+          const mergedProducts = remoteProducts.map((p) => {
+            if (pendingProductIds.has(p.id)) {
+              return prev.products.find((lp) => lp.id === p.id) ?? p;
+            }
+            return p;
+          });
+          prev.products.forEach((localProd) => {
+            if (pendingProductIds.has(localProd.id) && !mergedProducts.some((p) => p.id === localProd.id)) {
+              mergedProducts.push(localProd);
+            }
+          });
+          return { ...prev, products: mergedProducts };
+        });
       },
       (error) => {
         console.error("Products listener error:", error);
@@ -233,10 +264,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       collection(db, "stores", storeId, "creditCustomers"),
       (snapshot) => {
         const remoteCustomers = snapshot.docs.map((d) => d.data() as CreditCustomer);
-        updateDataFromRemote((prev) => ({ ...prev, creditCustomers: remoteCustomers }));
+        updateDataFromRemote((prev) => {
+          const pendingCustomerIds = new Set(
+            prev.syncQueue
+              .filter((op) => op.operationType === "customer.upsert" && op.status !== "synced")
+              .map((op) => (op.payload as CreditCustomer).id)
+          );
+          const mergedCustomers = remoteCustomers.map((c) => {
+            if (pendingCustomerIds.has(c.id)) {
+              return prev.creditCustomers.find((lc) => lc.id === c.id) ?? c;
+            }
+            return c;
+          });
+          prev.creditCustomers.forEach((localCust) => {
+            if (pendingCustomerIds.has(localCust.id) && !mergedCustomers.some((c) => c.id === localCust.id)) {
+              mergedCustomers.push(localCust);
+            }
+          });
+          return { ...prev, creditCustomers: mergedCustomers };
+        });
       },
       (error) => {
         console.error("Customers listener error:", error);
+      }
+    );
+
+    const transactionsUnsub = onSnapshot(
+      collection(db, "stores", storeId, "creditTransactions"),
+      (snapshot) => {
+        const remoteTransactions = snapshot.docs.map((d) => d.data() as CreditTransaction);
+        updateDataFromRemote((prev) => {
+          const pendingTxIds = new Set(
+            prev.syncQueue
+              .filter((op) => op.operationType === "transaction.create" && op.status !== "synced")
+              .map((op) => (op.payload as CreditTransaction).id)
+          );
+          const mergedTransactions = [...remoteTransactions];
+          prev.creditTransactions.forEach((localTx) => {
+            if (pendingTxIds.has(localTx.id) && !mergedTransactions.some((t) => t.id === localTx.id)) {
+              mergedTransactions.push(localTx);
+            }
+          });
+          return { ...prev, creditTransactions: mergedTransactions };
+        });
+      },
+      (error) => {
+        console.error("Transactions listener error:", error);
       }
     );
 
@@ -244,12 +317,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       salesUnsub();
       productsUnsub();
       customersUnsub();
+      transactionsUnsub();
     };
   }, [user, data?.store.id, updateDataFromRemote]);
 
+  // Auto-sync when online and there are unsynced operations
+  useEffect(() => {
+    if (isOnline && data && !user?.isDemo && !syncingRef.current) {
+      const hasUnsynced = data.syncQueue.some((op) => op.status !== "synced");
+      if (hasUnsynced) {
+        syncNow(true);
+      }
+    }
+  }, [isOnline, data, user?.isDemo, syncNow]);
+
   useEffect(() => {
     if (isOnline) {
-      syncNow();
+      syncNow(true);
     }
   }, [isOnline, syncNow]);
 

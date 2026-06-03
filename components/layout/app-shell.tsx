@@ -236,7 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {isOnline ? "متزامن الآن" : "بدون إنترنت"}
               </div>
               {pendingSyncCount ? (
-                <Button variant="secondary" onClick={syncNow} title="مزامنة الآن">
+                <Button variant="secondary" onClick={() => syncNow()} title="مزامنة الآن">
                   <RefreshCcw className="h-4 w-4" />
                   {pendingSyncCount}
                 </Button>
