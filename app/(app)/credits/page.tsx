@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clock3, Filter, Package, Plus, Printer, Search, ShoppingBag, Trash2, UserRound, UsersRound, Wallet, X } from "lucide-react";
+import { AlertCircle, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clock3, Filter, Package, Plus, Printer, Search, ShoppingBag, Trash2, UserRound, UsersRound, Wallet, X } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreditStatement } from "@/components/print/credit-statement";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,16 @@ import { daysBetween } from "@/utils/dates";
 import { formatCurrency, formatDate, formatNumber } from "@/utils/format";
 import { cn } from "@/utils/cn";
 
+/** هل حلّ تاريخ الدفع الخاص بالزبون أو تجاوزه؟ */
+function isPaymentOverdue(customer: CreditCustomer): boolean {
+  if (!customer.paymentDueDate || customer.remainingDebt <= 0) return false;
+  return new Date(customer.paymentDueDate) <= new Date();
+}
+
 function customerStatus(customer: CreditCustomer) {
+  if (isPaymentOverdue(customer)) {
+    return { label: "حلّ الأجل", sub: "تاريخ الدفع انقضى", icon: AlertCircle, className: "bg-red-50 text-red-600" };
+  }
   const lateDays = daysBetween(customer.lastActivityAt);
   if (lateDays > 7) return { label: "متأخر", sub: `متأخر ${lateDays} يوم`, icon: Clock3, className: "bg-red-50 text-red-600" };
   if (customer.remainingDebt > 50000) return { label: "تنبيه", sub: "دين مرتفع", icon: Clock3, className: "bg-orange-50 text-orange-600" };
@@ -28,7 +37,7 @@ export default function CreditsPage() {
   const [selectedId, setSelectedId] = useState("");
   const [deleting, setDeleting] = useState<CreditCustomer | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", address: "", openingDebt: 0 });
+  const [form, setForm] = useState({ name: "", phone: "", address: "", openingDebt: 0, paymentDueDate: "" });
   const [payment, setPayment] = useState({ amount: 0, note: "" });
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -83,9 +92,10 @@ export default function CreditsPage() {
         address: form.address,
         totalDebt: form.openingDebt,
         remainingDebt: form.openingDebt,
+        paymentDueDate: form.paymentDueDate || undefined,
       });
       setSelectedId(customer.id);
-      setForm({ name: "", phone: "", address: "", openingDebt: 0 });
+      setForm({ name: "", phone: "", address: "", openingDebt: 0, paymentDueDate: "" });
       setShowForm(false);
     } catch (error) {
       notify({ tone: "error", title: "تعذر حفظ الحساب", body: error instanceof Error ? error.message : undefined });
@@ -180,6 +190,7 @@ export default function CreditsPage() {
           {customers.map((customer) => {
             const status = customerStatus(customer);
             const Icon = status.icon;
+            const overdue = isPaymentOverdue(customer);
             return (
               <button
                 key={customer.id}
@@ -188,33 +199,41 @@ export default function CreditsPage() {
                   setDetailOpen(true);
                 }}
                 className={cn(
-                  "ios-card-tight grid w-full grid-cols-[1fr_130px] items-center gap-3 text-right",
+                  "ios-card-tight grid w-full grid-cols-[1fr_130px] items-center gap-3 text-right transition-all",
                   selected?.id === customer.id && "ring-2 ring-leaf-500/40",
+                  overdue && "border-2 border-red-400 bg-red-50/60 dark:bg-red-950/20",
                 )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="ios-icon">
-                    <UserRound className="h-6 w-6" />
+                  <div className={cn("ios-icon", overdue && "bg-red-100 dark:bg-red-950/40")}>
+                    <UserRound className={cn("h-6 w-6", overdue && "text-red-600")} />
                   </div>
                   <div>
-                    <p className="text-lg font-black">{customer.name}</p>
+                    <p className={cn("text-lg font-black", overdue && "text-red-700 dark:text-red-400")}>{customer.name}</p>
                     <p className="text-sm text-market-ink/60">{customer.phone ?? "بدون هاتف"}</p>
                   </div>
                 </div>
                 <div className="border-r border-black/5 pr-3">
                   <p className="text-xs text-market-ink/50">دين متبقي</p>
-                  <p className="text-xl font-black">{formatCurrency(customer.remainingDebt)}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-market-ink/55">
-                    <CalendarDays className="h-3 w-3" />
-                    {formatDate(customer.lastActivityAt).split("،")[0]}
-                  </p>
+                  <p className={cn("text-xl font-black", overdue && "text-red-600")}>{formatCurrency(customer.remainingDebt)}</p>
+                  {customer.paymentDueDate ? (
+                    <p className={cn("mt-1 flex items-center gap-1 text-xs", overdue ? "text-red-500 font-bold" : "text-market-ink/55")}>
+                      <CalendarDays className="h-3 w-3" />
+                      {overdue ? "انتهى: " : "أجل: "}{new Date(customer.paymentDueDate).toLocaleDateString("ar-DZ")}
+                    </p>
+                  ) : (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-market-ink/55">
+                      <CalendarDays className="h-3 w-3" />
+                      {formatDate(customer.lastActivityAt).split("،")[0]}
+                    </p>
+                  )}
                 </div>
-                <div className="col-span-2 flex items-center justify-between border-t border-black/5 pt-3">
+                <div className={cn("col-span-2 flex items-center justify-between border-t pt-3", overdue ? "border-red-200" : "border-black/5")}>
                   <div className={cn("inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-black", status.className)}>
                     <Icon className="h-4 w-4" />
                     {status.label}
                   </div>
-                  <span className="text-sm text-market-ink/60">{status.sub}</span>
+                  <span className={cn("text-sm", overdue ? "text-red-500 font-bold" : "text-market-ink/60")}>{status.sub}</span>
                 </div>
               </button>
             );
@@ -353,6 +372,19 @@ export default function CreditsPage() {
                 value={form.openingDebt}
                 onChange={(event) => setForm((current) => ({ ...current, openingDebt: Number(event.target.value) }))}
               />
+              <div className="space-y-1">
+                <label className="block text-sm font-bold text-market-ink/70">
+                  <CalendarDays className="inline h-4 w-4 ml-1 text-red-500" />
+                  تاريخ الدفع المحدد
+                </label>
+                <input
+                  type="date"
+                  value={form.paymentDueDate}
+                  onChange={(event) => setForm((current) => ({ ...current, paymentDueDate: event.target.value }))}
+                  className="w-full rounded-2xl border border-black/10 bg-transparent px-4 py-3 text-sm outline-none focus:border-leaf-500 focus:ring-2 focus:ring-leaf-500/20 dark:border-white/10"
+                />
+                <p className="text-xs text-market-ink/45">عند حلول هذا التاريخ تتحول بطاقة الزبون للأحمر تلقائياً</p>
+              </div>
               <Button className="w-full">حفظ الحساب</Button>
             </form>
           ) : null}
@@ -379,11 +411,18 @@ export default function CreditsPage() {
                   <UserRound className="h-6 w-6 text-leaf-700 dark:text-leaf-400" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-leaf-800 dark:text-leaf-300">{selected.name}</h2>
+                  <h2 className={cn("text-xl font-black", isPaymentOverdue(selected) ? "text-red-700 dark:text-red-400" : "text-leaf-800 dark:text-leaf-300")}>{selected.name}</h2>
                   <p className="text-xs text-market-ink/60 dark:text-white/60">
                     {selected.phone ? `الهاتف: ${selected.phone}` : "بدون هاتف"} 
                     {selected.address ? ` • العنوان: ${selected.address}` : ""}
                   </p>
+                  {selected.paymentDueDate ? (
+                    <p className={cn("mt-1 flex items-center gap-1 text-xs font-bold", isPaymentOverdue(selected) ? "text-red-500" : "text-market-ink/60 dark:text-white/60")}>
+                      <CalendarDays className="h-3 w-3" />
+                      {isPaymentOverdue(selected) ? "انتهى تاريخ الدفع: " : "تاريخ الدفع: "}
+                      {new Date(selected.paymentDueDate).toLocaleDateString("ar-DZ")}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex items-center gap-2">

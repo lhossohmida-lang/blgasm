@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { AlertTriangle, Box, Filter, Grid2X2, Pencil, Plus, QrCode, Save, Search, SlidersHorizontal, Star, Trash2, X, Zap } from "lucide-react";
+import { useRef, useMemo, useState } from "react";
+import { AlertTriangle, Box, ChevronDown, Filter, Grid2X2, Pencil, Plus, Save, Search, SlidersHorizontal, Star, Trash2, X, Zap } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProductForm } from "@/components/products/product-form";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,9 @@ export default function InventoryPage() {
   const { notify } = useToast();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -78,9 +81,18 @@ export default function InventoryPage() {
     [data?.products],
   );
 
+  const sortOptions = [
+    { id: "newest", label: "الأحدث أولاً" },
+    { id: "oldest", label: "الأقدم أولاً" },
+    { id: "name_asc", label: "الاسم أ-ي" },
+    { id: "name_desc", label: "الاسم ي-أ" },
+    { id: "qty_asc", label: "أقل كمية" },
+    { id: "qty_desc", label: "أعلى كمية" },
+  ];
+
   const products = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return (data?.products ?? [])
+    const filtered = (data?.products ?? [])
       .filter((product) => {
         if (!normalized) return true;
         return (
@@ -98,7 +110,17 @@ export default function InventoryPage() {
         if (filter.startsWith("category:")) return product.category === filter.replace("category:", "");
         return true;
       });
-  }, [data?.products, filter, query]);
+
+    return [...filtered].sort((a, b) => {
+      if (sort === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sort === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sort === "name_asc") return a.name.localeCompare(b.name, "ar");
+      if (sort === "name_desc") return b.name.localeCompare(a.name, "ar");
+      if (sort === "qty_asc") return a.quantity - b.quantity;
+      if (sort === "qty_desc") return b.quantity - a.quantity;
+      return 0;
+    });
+  }, [data?.products, filter, query, sort]);
 
   function setShortcutAt(index: number, productId: string) {
     const next = [...shortcuts];
@@ -277,10 +299,35 @@ export default function InventoryPage() {
 
       <div className="mb-4 flex items-center justify-between">
         <span className="text-sm font-bold text-market-ink/65">{formatNumber(products.length)} منتج</span>
-        <button className="ios-chip min-h-10 px-4">
-          <SlidersHorizontal className="h-4 w-4" />
-          الأحدث أولاً
-        </button>
+        <div className="relative" ref={sortMenuRef}>
+          <button
+            type="button"
+            className="ios-chip min-h-10 px-4 gap-1"
+            onClick={() => setShowSortMenu((v) => !v)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {sortOptions.find((o) => o.id === sort)?.label ?? "الأحدث أولاً"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showSortMenu && "rotate-180")} />
+          </button>
+          {showSortMenu ? (
+            <div className="absolute left-0 top-full mt-2 z-30 w-44 rounded-2xl border border-black/10 bg-white shadow-glass dark:bg-[#14211b] dark:border-white/10 overflow-hidden">
+              {sortOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => { setSort(option.id); setShowSortMenu(false); }}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-4 py-3 text-sm text-right transition hover:bg-leaf-50 dark:hover:bg-leaf-950/30",
+                    sort === option.id && "font-black text-leaf-700 bg-leaf-50/60 dark:bg-leaf-950/20"
+                  )}
+                >
+                  {sort === option.id && <span className="h-1.5 w-1.5 rounded-full bg-leaf-600 flex-shrink-0" />}
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Products as rows */}

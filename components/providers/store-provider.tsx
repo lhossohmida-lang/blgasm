@@ -334,6 +334,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         totalPaid: existing?.totalPaid ?? 0,
         remainingDebt: existing?.remainingDebt ?? openingDebt,
         lastActivityAt: openingDebt > 0 ? now : (existing?.lastActivityAt ?? now),
+        paymentDueDate: input.paymentDueDate ?? existing?.paymentDueDate,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };

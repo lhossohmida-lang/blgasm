@@ -108,6 +108,7 @@ export interface CreditCustomer {
   totalPaid: number;
   remainingDebt: number;
   lastActivityAt: string;
+  paymentDueDate?: string;
   createdAt: string;
   updatedAt: string;
 }
