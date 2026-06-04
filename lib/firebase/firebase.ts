@@ -2,7 +2,12 @@
 
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, initializeFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDcp7-UIG6BD8zMsU-pAe4JWs7WDfyuEBs",
@@ -17,15 +22,19 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 
+// Persistent local cache — stores data in IndexedDB automatically.
+// Works offline on Web, Electron, and Android (Capacitor) with zero extra code.
+// Pending writes are buffered and flushed automatically when connectivity returns.
 let firestoreDb;
 try {
   firestoreDb = initializeFirestore(firebaseApp, {
     ignoreUndefinedProperties: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
   });
-} catch (e) {
+} catch {
+  // Already initialised (e.g. hot-reload) — reuse the existing instance
   firestoreDb = getFirestore(firebaseApp);
 }
 export const db = firestoreDb;
-
-// enableFirebaseOfflinePersistence removed — we use our own IndexedDB (lib/offline/db.ts)
-// Firestore's built-in persistence conflicted with our sync system

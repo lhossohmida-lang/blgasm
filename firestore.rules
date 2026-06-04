@@ -2,8 +2,97 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ─── Helper functions ──────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuth() && userDoc().role == 'admin';
+    }
+
+    function isEmployee() {
+      return isAuth() && userDoc().role == 'employee';
+    }
+
+    function isAccountant() {
+      return isAuth() && userDoc().role == 'accountant';
+    }
+
+    function isStaff() {
+      return isAdmin() || isEmployee();
+    }
+
+    // User belongs to this store and their account is active
+    function ownStore(storeId) {
+      return isAuth()
+          && userDoc().storeId == storeId
+          && userDoc().isActive == true;
+    }
+
+    // ─── users collection ──────────────────────────────────────────────
+    match /users/{uid} {
+      // Each user reads their own doc; admins read all
+      allow read: if isAuth() && (request.auth.uid == uid || isAdmin());
+      // Only admins create / update user records (role management)
+      allow create, update: if isAdmin();
+      // Never delete users directly — deactivate via isActive flag
+      allow delete: if false;
+    }
+
+    // ─── stores collection ─────────────────────────────────────────────
+    match /stores/{storeId} {
+      allow read:   if ownStore(storeId);
+      allow create: if isAuth();
+      allow update: if ownStore(storeId) && (isAdmin() || isAccountant());
+      allow delete: if false;
+
+      // products ── employees and admins can add/edit; only admins delete
+      match /products/{productId} {
+        allow read:          if ownStore(storeId);
+        allow create, update: if ownStore(storeId) && isStaff();
+        allow delete:        if ownStore(storeId) && isAdmin();
+      }
+
+      // sales ── employees/admins create; only admins delete; no updates
+      match /sales/{saleId} {
+        allow read:   if ownStore(storeId);
+        allow create: if ownStore(storeId) && isStaff();
+        allow update: if false;                          // immutable records
+        allow delete: if ownStore(storeId) && isAdmin();
+      }
+
+      // creditCustomers ── staff can add/edit; only admins delete
+      match /creditCustomers/{customerId} {
+        allow read:          if ownStore(storeId);
+        allow create, update: if ownStore(storeId) && isStaff();
+        allow delete:        if ownStore(storeId) && isAdmin();
+      }
+
+      // creditTransactions ── staff create; immutable; only admins delete
+      match /creditTransactions/{txId} {
+        allow read:   if ownStore(storeId);
+        allow create: if ownStore(storeId) && isStaff();
+        allow update: if false;
+        allow delete: if ownStore(storeId) && isAdmin();
+      }
+
+      // auditLog ── readable by admin/accountant; created by any staff; never edited
+      match /auditLog/{logId} {
+        allow read:   if ownStore(storeId) && (isAdmin() || isAccountant());
+        allow create: if ownStore(storeId) && isStaff();
+        allow update, delete: if false;
+      }
+
+      // syncQueue ── full access for anyone in the store (offline queue)
+      match /syncQueue/{opId} {
+        allow read, write: if ownStore(storeId);
+      }
     }
   }
 }

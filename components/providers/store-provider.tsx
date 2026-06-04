@@ -15,10 +15,7 @@ import { useToast } from "@/components/providers/toast-provider";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   collection,
-  onSnapshot,
   query,
-  orderBy,
-  limit,
   setDoc,
   deleteDoc,
   doc,
@@ -26,6 +23,13 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
+import {
+  subscribeProducts,
+  subscribeSales,
+  subscribeCustomers,
+  subscribeTransactions,
+  unsubscribeAll,
+} from "@/lib/firebase/listeners";
 import {
   createSyncOperation,
   enqueueLocalOperation,
@@ -117,9 +121,11 @@ async function fbEnsureStore(storeId: string, ownerId: string, name: string) {
     { id: storeId, ownerId, name, updatedAt: new Date().toISOString() },
     { merge: true },
   );
+  // Write role + isActive so Security Rules can evaluate them.
+  // merge:true means we never overwrite an existing role set by an admin.
   await setDoc(
     doc(db, "users", ownerId),
-    { storeId, updatedAt: new Date().toISOString() },
+    { storeId, isActive: true, updatedAt: new Date().toISOString() },
     { merge: true },
   );
 }
@@ -229,66 +235,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const storeId = storeIdRef.current;
     if (!storeId) return;
 
-    const unsub1 = onSnapshot(
-      collection(db, "stores", storeId, "products"),
-      (snap) => {
-        const products = snap.docs.map((d) => d.data() as Product);
-        setData((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev, products, updatedAt: new Date().toISOString() };
-          saveLocalAppData(next).catch(() => {});
-          return next;
-        });
-      },
-      (err) => console.error("[sync] products:", err),
-    );
+    const unsub1 = subscribeProducts(storeId, (products) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, products, updatedAt: new Date().toISOString() };
+        saveLocalAppData(next).catch(() => {});
+        return next;
+      });
+    });
 
-    const unsub2 = onSnapshot(
-      query(collection(db, "stores", storeId, "sales"), orderBy("createdAt", "desc"), limit(500)),
-      (snap) => {
-        const sales = snap.docs.map((d) => d.data() as Sale);
-        setData((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev, sales, updatedAt: new Date().toISOString() };
-          saveLocalAppData(next).catch(() => {});
-          return next;
-        });
-      },
-      (err) => console.error("[sync] sales:", err),
-    );
+    const unsub2 = subscribeSales(storeId, (sales) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, sales, updatedAt: new Date().toISOString() };
+        saveLocalAppData(next).catch(() => {});
+        return next;
+      });
+    });
 
-    const unsub3 = onSnapshot(
-      collection(db, "stores", storeId, "creditCustomers"),
-      (snap) => {
-        const creditCustomers = snap.docs.map((d) => d.data() as CreditCustomer);
-        setData((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev, creditCustomers, updatedAt: new Date().toISOString() };
-          saveLocalAppData(next).catch(() => {});
-          return next;
-        });
-      },
-      (err) => console.error("[sync] customers:", err),
-    );
+    const unsub3 = subscribeCustomers(storeId, (creditCustomers) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, creditCustomers, updatedAt: new Date().toISOString() };
+        saveLocalAppData(next).catch(() => {});
+        return next;
+      });
+    });
 
-    const unsub4 = onSnapshot(
-      collection(db, "stores", storeId, "creditTransactions"),
-      (snap) => {
-        const creditTransactions = snap.docs.map((d) => d.data() as CreditTransaction);
-        setData((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev, creditTransactions, updatedAt: new Date().toISOString() };
-          saveLocalAppData(next).catch(() => {});
-          return next;
-        });
-      },
-      (err) => console.error("[sync] transactions:", err),
-    );
+    const unsub4 = subscribeTransactions(storeId, (creditTransactions) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, creditTransactions, updatedAt: new Date().toISOString() };
+        saveLocalAppData(next).catch(() => {});
+        return next;
+      });
+    });
 
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   // Only re-run when user or loading status changes — NOT on every data change
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, user?.isVerified, loading]);
+
+  // Cancel all listeners on logout
+  useEffect(() => {
+    if (!user) unsubscribeAll();
+  }, [user]);
 
   // ── syncNow: flush offline queue + re-pull from Firebase ───────────────
   const syncNow = useCallback(async (silent = false) => {
