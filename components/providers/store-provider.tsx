@@ -17,10 +17,10 @@ import {
   collection,
   query,
   setDoc,
+  getDoc,
   deleteDoc,
   doc,
   getDocs,
-  getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 import {
@@ -39,6 +39,7 @@ import {
 } from "@/lib/offline/db";
 import { flushSyncQueue } from "@/lib/firebase/offlineSync";
 import { fetchRemoteAppData } from "@/lib/firebase/firestore";
+import { writeAuditLog } from "@/lib/firebase/auditLog";
 import type {
   AppData,
   CreditCustomer,
@@ -121,11 +122,16 @@ async function fbEnsureStore(storeId: string, ownerId: string, name: string) {
     { id: storeId, ownerId, name, updatedAt: new Date().toISOString() },
     { merge: true },
   );
-  // Write role + isActive so Security Rules can evaluate them.
-  // merge:true means we never overwrite an existing role set by an admin.
+  // Read the user doc first — only inject role:"admin" if the field is missing.
+  // This prevents overwriting a role already set by an admin (e.g. employee/accountant).
+  const userRef = doc(db, "users", ownerId);
+  const userSnap = await getDoc(userRef);
+  const rolePayload = (!userSnap.exists() || !userSnap.data().role)
+    ? { role: "admin" }
+    : {};
   await setDoc(
-    doc(db, "users", ownerId),
-    { storeId, isActive: true, updatedAt: new Date().toISOString() },
+    userRef,
+    { storeId, isActive: true, updatedAt: new Date().toISOString(), ...rolePayload },
     { merge: true },
   );
 }
@@ -387,9 +393,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       () => fbWriteProduct(storeId, product),
       createSyncOperation("product.upsert", product, product.id),
     );
+    // Audit — non-blocking
+    void writeAuditLog(storeId, {
+      userId: user?.uid ?? "unknown",
+      userEmail: user?.email ?? "unknown",
+      action: existing ? "product.update" : "product.create",
+      entityType: "product",
+      entityId: product.id,
+      after: { name: product.name, quantity: product.quantity, sellPrice: product.sellPrice },
+      platform: "web",
+    });
     notify({ tone: "success", title: "تم إدخال المنتج بنجاح", body: product.name });
     return product;
-  }, [data, isOnline, notify]);
+  }, [data, isOnline, notify, user]);
 
   // ── deleteProduct ───────────────────────────────────────────────────────
   const deleteProduct = useCallback(async (productId: string) => {
@@ -401,8 +417,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       () => fbDeleteProduct(storeId, productId),
       createSyncOperation("product.delete", { productId }, productId),
     );
+    // Audit — non-blocking
+    void writeAuditLog(storeId, {
+      userId: user?.uid ?? "unknown",
+      userEmail: user?.email ?? "unknown",
+      action: "product.delete",
+      entityType: "product",
+      entityId: productId,
+      before: { name: product?.name },
+      platform: "web",
+    });
     notify({ tone: "info", title: "تم حذف المنتج", body: product?.name });
-  }, [data, isOnline, notify]);
+  }, [data, isOnline, notify, user]);
 
   const findProductByCode = useCallback(
     (code: string) => data?.products.find((p) => p.qrCode === code.trim()),
@@ -478,6 +504,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
 
     notify({ tone: "success", title: "تم البيع بنجاح", body: sale.receiptNumber });
+    // Audit — non-blocking
+    void writeAuditLog(storeId, {
+      userId: user.uid,
+      userEmail: user.email,
+      action: "sale.create",
+      entityType: "sale",
+      entityId: sale.id,
+      after: { receiptNumber: sale.receiptNumber, totalAmount: sale.totalAmount, type: sale.type },
+      platform: "web",
+    });
     return sale;
   }, [data, user, isOnline, notify]);
 
@@ -502,8 +538,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         );
       },
     );
+    // Audit — non-blocking
+    void writeAuditLog(storeId, {
+      userId: user?.uid ?? "unknown",
+      userEmail: user?.email ?? "unknown",
+      action: "sale.delete",
+      entityType: "sale",
+      entityId: saleId,
+      before: { receiptNumber: sale.receiptNumber, totalAmount: sale.totalAmount },
+      platform: "web",
+    });
     notify({ tone: "info", title: "تم حذف البيع وإعادة البضاعة للمخزون" });
-  }, [data, isOnline, notify]);
+  }, [data, isOnline, notify, user]);
 
   // ── upsertCustomer ──────────────────────────────────────────────────────
   const upsertCustomer = useCallback(async (input: Partial<CreditCustomer> & { name: string }) => {
