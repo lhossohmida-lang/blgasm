@@ -16,6 +16,7 @@ import {
   Settings,
   ShoppingCart,
   Sun,
+  Users,
   UserRound,
   UsersRound,
   Wifi,
@@ -40,6 +41,7 @@ const desktopNav = [
   { href: "/credits", label: "الكريديات", icon: UsersRound },
   { href: "/reports", label: "التقارير", icon: BarChart3 },
   { href: "/ai", label: "الذكاء الاصطناعي", icon: Bot },
+  { href: "/users", label: "المستخدمون", icon: Users },
 ];
 
 const bottomNav = [
