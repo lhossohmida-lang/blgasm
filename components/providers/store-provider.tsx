@@ -40,6 +40,7 @@ import {
 import { flushSyncQueue } from "@/lib/firebase/offlineSync";
 import { fetchRemoteAppData } from "@/lib/firebase/firestore";
 import { writeAuditLog } from "@/lib/firebase/auditLog";
+import { useDailyCleanup } from "@/hooks/use-daily-cleanup";
 import type {
   AppData,
   CreditCustomer,
@@ -140,6 +141,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { notify } = useToast();
   const isOnline = useOnlineStatus();
+  // Free replacement for Firebase scheduled function — cleans old sync ops once/day
+  useDailyCleanup();
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
